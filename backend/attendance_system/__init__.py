@@ -1,0 +1,3 @@
+"""
+Attendance System Django Project
+"""
