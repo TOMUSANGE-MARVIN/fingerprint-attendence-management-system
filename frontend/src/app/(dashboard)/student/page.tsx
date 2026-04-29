@@ -30,7 +30,7 @@ import {
   Clock,
   ChevronRight,
 } from "lucide-react";
-import { cn, getAttendanceBgClass } from "@/lib/utils";
+import { cn, calculateRiskLevel } from "@/lib/utils";
 import Link from "next/link";
 
 const NOTIFICATION_ICONS: Record<string, React.ReactNode> = {
@@ -42,12 +42,114 @@ const NOTIFICATION_ICONS: Record<string, React.ReactNode> = {
   system: <Bell className="w-4 h-4 text-gray-500 dark:text-gray-400" />,
 };
 
+type AttendanceStatus = "present" | "absent" | "late" | "excused";
+
+interface StudentAttendanceApi {
+  courseId: string;
+  courseCode: string;
+  courseName: string;
+  totalSessions: number;
+  attended: number;
+  late: number;
+  absent: number;
+  attendancePercentage: number;
+}
+
+interface AttendanceRecordApi {
+  id: string;
+  status: AttendanceStatus;
+  verificationMethod: "fingerprint" | "manual" | "qr_code" | "facial" | null;
+  markedAt?: string | null;
+  createdAt?: string;
+  sessionDate?: string;
+  courseCode?: string;
+  courseName?: string;
+}
+
+interface NotificationApi {
+  id: string | number;
+  title: string;
+  message: string;
+  notificationType?: string;
+  isRead: boolean;
+  createdAt: string;
+  link?: string | null;
+}
+
+function normalizeList<T>(data: { results?: T[] } | T[]): T[] {
+  return Array.isArray(data) ? data : data.results ?? [];
+}
+
+function mapNotificationType(type?: string): Notification["type"] {
+  switch (type) {
+    case "warning":
+    case "error":
+      return "alert";
+    case "success":
+      return "attendance";
+    case "info":
+      return "system";
+    default:
+      return "system";
+  }
+}
+
+function getRecordDate(record: AttendanceRecordApi): Date | null {
+  const dateStr = record.sessionDate || record.markedAt || record.createdAt;
+  if (!dateStr) return null;
+  const date = new Date(dateStr);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getWeekBucket(date: Date): { key: string; label: string; bucketDate: Date } {
+  const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = utcDate.getUTCDay() || 7;
+  utcDate.setUTCDate(utcDate.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(utcDate.getUTCFullYear(), 0, 1));
+  const weekNum = Math.ceil((((utcDate.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  const key = `${utcDate.getUTCFullYear()}-W${weekNum}`;
+  return { key, label: `Week ${weekNum}`, bucketDate: utcDate };
+}
+
+function getMonthBucket(date: Date): { key: string; label: string; bucketDate: Date } {
+  const key = `${date.getFullYear()}-${date.getMonth()}`;
+  const label = date.toLocaleString("en-US", { month: "short" });
+  return { key, label, bucketDate: new Date(date.getFullYear(), date.getMonth(), 1) };
+}
+
+function buildTrends(records: AttendanceRecordApi[], granularity: "week" | "month") {
+  const buckets = new Map<string, { label: string; date: Date; attended: number; total: number }>();
+  records.forEach((record) => {
+    const date = getRecordDate(record);
+    if (!date) return;
+    const bucket = granularity === "week" ? getWeekBucket(date) : getMonthBucket(date);
+    if (!buckets.has(bucket.key)) {
+      buckets.set(bucket.key, { label: bucket.label, date: bucket.bucketDate, attended: 0, total: 0 });
+    }
+    const entry = buckets.get(bucket.key)!;
+    entry.total += 1;
+    if (record.status === "present" || record.status === "late") {
+      entry.attended += 1;
+    }
+  });
+
+  return Array.from(buckets.values())
+    .sort((a, b) => a.date.getTime() - b.date.getTime())
+    .map((entry) => ({
+      period: entry.label,
+      percentage: entry.total > 0 ? Math.round((entry.attended / entry.total) * 100) : 0,
+      sessionsAttended: entry.attended,
+      totalSessions: entry.total,
+    }));
+}
+
 export default function StudentDashboardPage() {
   const { user } = useAuth();
   const [analytics, setAnalytics] = useState<AttendanceAnalytics | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [excusedCount, setExcusedCount] = useState(0);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -55,17 +157,55 @@ export default function StudentDashboardPage() {
 
       try {
         setIsLoading(true);
-        const [analyticsRes, notifRes] = await Promise.allSettled([
-          apiClient.get<AttendanceAnalytics>(API_ENDPOINTS.students.analytics(user.id)),
-          apiClient.get<{ results: Notification[] }>(API_ENDPOINTS.auth.notifications),
+        setError(null);
+
+        const [summaryRes, recordsRes, notifRes] = await Promise.all([
+          apiClient.get<StudentAttendanceApi[]>(API_ENDPOINTS.attendance.myStudent),
+          apiClient.get<{ results?: AttendanceRecordApi[] } | AttendanceRecordApi[]>(API_ENDPOINTS.attendance.recordsList),
+          apiClient.get<{ results?: NotificationApi[] } | NotificationApi[]>(API_ENDPOINTS.auth.notifications),
         ]);
 
-        if (analyticsRes.status === "fulfilled") {
-          setAnalytics(analyticsRes.value.data);
-        }
-        if (notifRes.status === "fulfilled") {
-          setNotifications((notifRes.value.data as any).results ?? notifRes.value.data as any);
-        }
+        const summaries = normalizeList(summaryRes.data).map((course) => ({
+          courseId: course.courseId,
+          courseCode: course.courseCode,
+          courseName: course.courseName,
+          totalSessions: course.totalSessions,
+          attended: course.attended,
+          absent: course.absent,
+          late: course.late,
+          excused: 0,
+          attendancePercentage: course.attendancePercentage,
+        }));
+
+        const records = normalizeList(recordsRes.data);
+        const weeklyTrends = buildTrends(records, "week").slice(-6);
+        const monthlyTrends = buildTrends(records, "month").slice(-4);
+        setExcusedCount(records.filter((record) => record.status === "excused").length);
+
+        const totalSessions = summaries.reduce((sum, c) => sum + c.totalSessions, 0);
+        const totalAttended = summaries.reduce((sum, c) => sum + c.attended + c.late, 0);
+        const overallPercentage = totalSessions > 0
+          ? Math.round((totalAttended / totalSessions) * 1000) / 10
+          : 0;
+
+        setAnalytics({
+          overallPercentage,
+          weeklyTrends,
+          monthlyTrends,
+          courseSummaries: summaries,
+          riskLevel: calculateRiskLevel(overallPercentage),
+        });
+
+        const normalizedNotifications = normalizeList(notifRes.data).map((notif) => ({
+          id: notif.id,
+          type: mapNotificationType(notif.notificationType),
+          title: notif.title,
+          message: notif.message,
+          isRead: notif.isRead,
+          createdAt: notif.createdAt,
+          actionUrl: notif.link ?? undefined,
+        }));
+        setNotifications(normalizedNotifications);
       } catch (err) {
         setError("Failed to load dashboard data. Please try again.");
         console.error("Dashboard fetch error:", err);
@@ -90,48 +230,24 @@ export default function StudentDashboardPage() {
     );
   }
 
-  // Demo data for visualization
-  const demoAnalytics: AttendanceAnalytics = analytics || {
-    overallPercentage: 82.5,
-    riskLevel: "low",
-    weeklyTrends: [
-      { period: "Week 1", percentage: 85, sessionsAttended: 17, totalSessions: 20 },
-      { period: "Week 2", percentage: 80, sessionsAttended: 16, totalSessions: 20 },
-      { period: "Week 3", percentage: 90, sessionsAttended: 18, totalSessions: 20 },
-      { period: "Week 4", percentage: 75, sessionsAttended: 15, totalSessions: 20 },
-      { period: "Week 5", percentage: 85, sessionsAttended: 17, totalSessions: 20 },
-      { period: "Week 6", percentage: 80, sessionsAttended: 16, totalSessions: 20 },
-    ],
-    monthlyTrends: [
-      { period: "Sep", percentage: 88, sessionsAttended: 44, totalSessions: 50 },
-      { period: "Oct", percentage: 82, sessionsAttended: 41, totalSessions: 50 },
-      { period: "Nov", percentage: 79, sessionsAttended: 39, totalSessions: 50 },
-      { period: "Dec", percentage: 85, sessionsAttended: 34, totalSessions: 40 },
-    ],
-    courseSummaries: [
-      { courseId: 1, courseCode: "CS301", courseName: "Database Systems", totalSessions: 24, attended: 22, absent: 2, late: 0, excused: 0, attendancePercentage: 91.7 },
-      { courseId: 2, courseCode: "CS302", courseName: "Software Engineering", totalSessions: 24, attended: 20, absent: 3, late: 1, excused: 0, attendancePercentage: 83.3 },
-      { courseId: 3, courseCode: "CS303", courseName: "Computer Networks", totalSessions: 24, attended: 16, absent: 6, late: 2, excused: 0, attendancePercentage: 66.7 },
-      { courseId: 4, courseCode: "CS304", courseName: "Artificial Intelligence", totalSessions: 24, attended: 21, absent: 2, late: 1, excused: 0, attendancePercentage: 87.5 },
-    ],
-  };
-
-  const demoNotifications: Notification[] = notifications.length > 0 ? notifications : [
-    { id: 1, type: "alert", title: "CS303 Attendance Warning", message: "Your attendance in Computer Networks is 66.7%, below the 75% requirement.", isRead: false, createdAt: "2026-02-21T10:00:00Z" },
-    { id: 2, type: "attendance", title: "Attendance Confirmed", message: "Your attendance for CS301 Database Systems (09:00 session) was recorded.", isRead: false, createdAt: "2026-02-21T09:05:00Z" },
-    { id: 3, type: "upcoming_lecture", title: "Upcoming Lecture", message: "CS302 Software Engineering starts in 15 minutes in Lab A.", isRead: true, createdAt: "2026-02-21T08:45:00Z" },
-    { id: 4, type: "missed_lecture", title: "Missed Lecture", message: "You were marked absent for CS303 Computer Networks on 20 Feb.", isRead: true, createdAt: "2026-02-20T12:00:00Z" },
-  ];
+  if (!analytics) {
+    return (
+      <ErrorState
+        message="No attendance analytics available yet."
+        onRetry={() => window.location.reload()}
+      />
+    );
+  }
 
   // Calculate aggregate stats
-  const totalSessions = demoAnalytics.courseSummaries.reduce((sum, c) => sum + c.totalSessions, 0);
-  const totalAttended = demoAnalytics.courseSummaries.reduce((sum, c) => sum + c.attended, 0);
-  const totalAbsent = demoAnalytics.courseSummaries.reduce((sum, c) => sum + c.absent, 0);
-  const totalLate = demoAnalytics.courseSummaries.reduce((sum, c) => sum + c.late, 0);
-  const coursesAtRisk = demoAnalytics.courseSummaries.filter(c => c.attendancePercentage < 75).length;
-  const unreadCount = demoNotifications.filter(n => !n.isRead).length;
+  const totalSessions = analytics.courseSummaries.reduce((sum, c) => sum + c.totalSessions, 0);
+  const totalAttended = analytics.courseSummaries.reduce((sum, c) => sum + c.attended + c.late, 0);
+  const totalAbsent = analytics.courseSummaries.reduce((sum, c) => sum + c.absent, 0);
+  const totalLate = analytics.courseSummaries.reduce((sum, c) => sum + c.late, 0);
+  const coursesAtRisk = analytics.courseSummaries.filter(c => c.attendancePercentage < 75).length;
+  const unreadCount = notifications.filter(n => !n.isRead).length;
 
-  const barChartData = demoAnalytics.courseSummaries.map(c => ({
+  const barChartData = analytics.courseSummaries.map(c => ({
     courseCode: c.courseCode,
     courseName: c.courseName,
     percentage: c.attendancePercentage,
@@ -152,10 +268,10 @@ export default function StudentDashboardPage() {
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-500 dark:text-gray-400">Status:</span>
           <Badge
-            variant={demoAnalytics.riskLevel === "low" ? "success" : demoAnalytics.riskLevel === "medium" ? "warning" : "danger"}
+            variant={analytics.riskLevel === "low" ? "success" : analytics.riskLevel === "medium" ? "warning" : "danger"}
             dot
           >
-            {demoAnalytics.riskLevel === "low" ? "On Track" : demoAnalytics.riskLevel === "medium" ? "At Risk" : "Critical"}
+            {analytics.riskLevel === "low" ? "On Track" : analytics.riskLevel === "medium" ? "At Risk" : "Critical"}
           </Badge>
         </div>
       </div>
@@ -164,11 +280,11 @@ export default function StudentDashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Overall Attendance"
-          value={`${demoAnalytics.overallPercentage.toFixed(1)}%`}
-          subtitle={demoAnalytics.overallPercentage >= 75 ? "Above target" : "Below 75% target"}
+          value={`${analytics.overallPercentage.toFixed(1)}%`}
+          subtitle={analytics.overallPercentage >= 75 ? "Above target" : "Below 75% target"}
           icon={<GraduationCap className="w-6 h-6" />}
-          variant={demoAnalytics.overallPercentage >= 75 ? "success" : "danger"}
-          trend={demoAnalytics.overallPercentage >= 75 ? { value: 5, isPositive: true } : undefined}
+          variant={analytics.overallPercentage >= 75 ? "success" : "danger"}
+          trend={analytics.overallPercentage >= 75 ? { value: 5, isPositive: true } : undefined}
         />
         <StatCard
           title="Sessions Attended"
@@ -179,7 +295,7 @@ export default function StudentDashboardPage() {
         />
         <StatCard
           title="Registered Courses"
-          value={demoAnalytics.courseSummaries.length}
+          value={analytics.courseSummaries.length}
           subtitle={coursesAtRisk > 0 ? `${coursesAtRisk} at risk` : "All on track"}
           icon={<BookOpen className="w-6 h-6" />}
           variant={coursesAtRisk > 0 ? "warning" : "default"}
@@ -209,7 +325,7 @@ export default function StudentDashboardPage() {
                 </select>
               }
             />
-            <AttendanceLineChart data={demoAnalytics.weeklyTrends} />
+            <AttendanceLineChart data={analytics.weeklyTrends} />
           </Card>
 
           {/* Course Attendance Bar Chart */}
@@ -232,7 +348,7 @@ export default function StudentDashboardPage() {
                 </Link>
               }
             />
-            <CourseList courses={demoAnalytics.courseSummaries} />
+            <CourseList courses={analytics.courseSummaries} />
           </Card>
         </div>
 
@@ -248,7 +364,7 @@ export default function StudentDashboardPage() {
               present={totalAttended}
               absent={totalAbsent}
               late={totalLate}
-              excused={0}
+              excused={excusedCount}
               height={280}
             />
           </Card>
@@ -267,7 +383,7 @@ export default function StudentDashboardPage() {
               }
             />
             <div className="space-y-2">
-              {demoNotifications.slice(0, 4).map((notif) => (
+              {notifications.slice(0, 4).map((notif) => (
                 <div
                   key={notif.id}
                   className={cn(

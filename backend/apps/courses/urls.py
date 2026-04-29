@@ -7,6 +7,7 @@ from .views import (
     CourseViewSet, EnrollmentViewSet, StudentCoursesView, LecturerCoursesView,
     FacultyViewSet, AcademicPeriodViewSet,
     AcademicYearViewSet, ProgrammeViewSet, CohortViewSet, CoordinatorLecturesView,
+    MyCoordinatedCourseView,
 )
 
 # Use separate routers so sub-resource patterns are registered
@@ -43,9 +44,11 @@ urlpatterns = [
     path('academic-years/', include(year_router.urls)),
     path('programmes/', include(programme_router.urls)),
     path('cohorts/', include(cohort_router.urls)),
-    # Catch-all for courses — must be last
-    path('', include(course_router.urls)),
+    # Explicit paths must come BEFORE the course router catch-all
     path('my/student/', StudentCoursesView.as_view(), name='student_courses'),
     path('my/lecturer/', LecturerCoursesView.as_view(), name='lecturer_courses'),
     path('my/lectures/today/', CoordinatorLecturesView.as_view(), name='coordinator_lectures_today'),
+    path('my-coordinated/', MyCoordinatedCourseView.as_view(), name='my-coordinated-course'),
+    # Catch-all for courses — must be last
+    path('', include(course_router.urls)),
 ]

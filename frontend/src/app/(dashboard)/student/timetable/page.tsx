@@ -23,8 +23,9 @@ const SLOT_COLORS = [
   "bg-pink-50 border-pink-300 text-pink-800 dark:bg-pink-950/50 dark:border-pink-700 dark:text-pink-300",
 ];
 
-function slotColor(courseId: string) {
-  const n = courseId.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
+function slotColor(courseId: string | undefined) {
+  const id = courseId ?? "default";
+  const n = id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
   return SLOT_COLORS[n % SLOT_COLORS.length];
 }
 
@@ -60,13 +61,9 @@ export default function StudentTimetablePage() {
       } catch {
         // Demo data
         setSlots([
-          { id: "1", courseId: "1", course: { id: 1, code: "BIT201", name: "Data Structures" }, dayOfWeek: "monday", startTime: "09:00", endTime: "11:00", room: "Lab A", isActive: true },
-          { id: "2", courseId: "2", course: { id: 2, code: "BIT202", name: "Database Systems" }, dayOfWeek: "monday", startTime: "14:00", endTime: "16:00", room: "LT3", isActive: true },
-          { id: "3", courseId: "3", course: { id: 3, code: "BIT101", name: "Intro to Programming" }, dayOfWeek: "tuesday", startTime: "08:00", endTime: "10:00", room: "Lab B", isActive: true },
-          { id: "4", courseId: "4", course: { id: 4, code: "BIT301", name: "Software Engineering" }, dayOfWeek: "tuesday", startTime: "13:00", endTime: "15:00", room: "LT1", isActive: true },
-          { id: "5", courseId: "1", course: { id: 1, code: "BIT201", name: "Data Structures" }, dayOfWeek: "wednesday", startTime: "10:00", endTime: "12:00", room: "Lab A", isActive: true },
-          { id: "6", courseId: "2", course: { id: 2, code: "BIT202", name: "Database Systems" }, dayOfWeek: "thursday", startTime: "09:00", endTime: "11:00", room: "LT3", isActive: true },
-          { id: "7", courseId: "3", course: { id: 3, code: "BIT101", name: "Intro to Programming" }, dayOfWeek: "friday", startTime: "11:00", endTime: "13:00", room: "Lab C", isActive: true },
+          { id: "1", course: "1", courseCode: "BIT201", courseName: "Data Structures", dayOfWeek: "saturday", startTime: "08:00", endTime: "11:00", room: "W-LT3", isActive: true },
+          { id: "2", course: "2", courseCode: "DIT201", courseName: "Web Technologies", dayOfWeek: "saturday", startTime: "11:00", endTime: "14:00", room: "W-LT7", isActive: true },
+          { id: "3", course: "3", courseCode: "DIT201", courseName: "Web Technologies", dayOfWeek: "sunday", startTime: "11:00", endTime: "14:00", room: "W-LT7", isActive: true },
         ]);
       } finally {
         setIsLoading(false);
@@ -132,11 +129,11 @@ export default function StudentTimetablePage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="font-semibold text-gray-900 dark:text-white">
-                        {slot.course.code}
+                        {slot.courseCode}
                       </p>
                       {isNow && <Badge variant="success" dot>Now</Badge>}
                     </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{slot.course.name}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{slot.courseName}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -196,7 +193,7 @@ export default function StudentTimetablePage() {
                     "flex items-center gap-4 p-4 rounded-xl border-2 transition-all",
                     isNow
                       ? "border-primary-400 dark:border-primary-600 bg-primary-50 dark:bg-primary-950/30 shadow-sm"
-                      : `border ${slotColor(slot.courseId).split(" ").slice(2).join(" ")} ${slotColor(slot.courseId).split(" ").slice(0, 2).join(" ")}`
+                      : `border ${slotColor(slot.courseCode ?? slot.course).split(" ").slice(2).join(" ")} ${slotColor(slot.courseCode ?? slot.course).split(" ").slice(0, 2).join(" ")}`
                   )}
                 >
                   {/* Time column */}
@@ -212,11 +209,11 @@ export default function StudentTimetablePage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono text-xs font-bold px-2 py-0.5 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300">
-                        {slot.course.code}
+                        {slot.courseCode}
                       </span>
                       {isNow && <Badge variant="success" dot>In Progress</Badge>}
                     </div>
-                    <p className="mt-1 font-medium text-gray-900 dark:text-gray-100">{slot.course.name}</p>
+                    <p className="mt-1 font-medium text-gray-900 dark:text-gray-100">{slot.courseName}</p>
                     <div className="flex items-center gap-4 mt-1.5 text-sm text-gray-500 dark:text-gray-400">
                       <span className="flex items-center gap-1">
                         <MapPin className="w-3.5 h-3.5" />
@@ -270,9 +267,9 @@ export default function StudentTimetablePage() {
                     {daySlots.map((slot) => (
                       <div
                         key={slot.id}
-                        className={cn("rounded-lg p-1.5 border text-xs", slotColor(slot.courseId))}
+                        className={cn("rounded-lg p-1.5 border text-xs", slotColor(slot.courseCode ?? slot.course))}
                       >
-                        <p className="font-bold">{slot.course.code}</p>
+                        <p className="font-bold">{slot.courseCode}</p>
                         <p className="opacity-75">{slot.startTime}</p>
                       </div>
                     ))}

@@ -34,8 +34,23 @@ class IsLecturerOrAdmin(permissions.BasePermission):
 
 class IsOwnerOrAdmin(permissions.BasePermission):
     """Permission class for object owner or admin."""
-    
+
     def has_object_permission(self, request, view, obj):
         if request.user.role == 'admin':
             return True
         return obj == request.user or getattr(obj, 'user', None) == request.user
+
+
+class IsLecturerOrAdminOrCoordinator(permissions.BasePermission):
+    """Allows access to lecturers, admins, and student coordinators."""
+
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        if request.user.role in ('lecturer', 'admin'):
+            return True
+        # Student coordinators (assigned per study-time group)
+        if request.user.role == 'student':
+            from apps.courses.models import CohortGroupCoordinator
+            return CohortGroupCoordinator.objects.filter(coordinator=request.user).exists()
+        return False

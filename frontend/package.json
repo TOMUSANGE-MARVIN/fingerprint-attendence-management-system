@@ -4,9 +4,9 @@
   "description": "AI-Driven Student Class Attendance Management System",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack -p 3001",
+    "dev": "next dev --turbopack",
     "build": "next build",
-    "start": "next start -p 3001",
+    "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {

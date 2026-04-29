@@ -237,27 +237,53 @@ class DashboardAnalyticsView(APIView):
 
         active_sessions = AttendanceSession.objects.filter(is_active=True).count()
 
-        departments = Course.objects.values('department').annotate(
-            course_count=Count('id')
-        ).order_by('-course_count')
-
         at_risk_count = Enrollment.objects.filter(
             is_active=True
         ).exclude(
             attendance_percentage__gte=75
         ).values('student').distinct().count()
 
-        trend_data = []
-        for i in range(7, -1, -1):
-            date = (timezone.now() - timedelta(days=i)).date()
-            day_records = all_records.filter(session__date=date)
-            total = day_records.count()
-            present = day_records.filter(status__in=['present', 'late']).count()
-            rate = round((present / total * 100), 1) if total > 0 else 0
-            trend_data.append({
-                'date': date.isoformat(),
-                'rate': rate,
-                'total': total
+        # Attendance by department with student counts
+        attendance_by_department = []
+        departments = set(Course.objects.filter(is_active=True).values_list('department', flat=True))
+        for dept in departments:
+            if not dept:
+                continue
+            dept_courses = Course.objects.filter(department=dept, is_active=True)
+            dept_enrollments = Enrollment.objects.filter(course__in=dept_courses, is_active=True)
+            student_count = dept_enrollments.values('student').distinct().count()
+            
+            dept_records = AttendanceRecord.objects.filter(session__course__in=dept_courses)
+            dept_total = dept_records.count()
+            dept_present = dept_records.filter(status__in=['present', 'late']).count()
+            dept_percentage = round((dept_present / dept_total * 100), 1) if dept_total > 0 else 0
+            
+            attendance_by_department.append({
+                'department': dept,
+                'percentage': dept_percentage,
+                'student_count': student_count
+            })
+        
+        # Sort by percentage descending
+        attendance_by_department.sort(key=lambda x: x['percentage'], reverse=True)
+
+        # Weekly trends formatted for frontend charts
+        recent_trends = []
+        for i in range(5, -1, -1):
+            week_start = timezone.now() - timedelta(weeks=i+1)
+            week_end = timezone.now() - timedelta(weeks=i)
+            week_records = all_records.filter(
+                session__date__gte=week_start.date(),
+                session__date__lt=week_end.date()
+            )
+            total = week_records.count()
+            present = week_records.filter(status__in=['present', 'late']).count()
+            percentage = round((present / total * 100), 1) if total > 0 else 0
+            recent_trends.append({
+                'period': f'Week {6-i}',
+                'percentage': percentage,
+                'sessions_attended': present,
+                'total_sessions': total
             })
 
         return Response({
@@ -267,8 +293,8 @@ class DashboardAnalyticsView(APIView):
             'active_sessions': active_sessions,
             'average_attendance': avg_attendance,
             'students_at_risk': at_risk_count,
-            'departments': list(departments),
-            'weekly_trend': trend_data
+            'attendance_by_department': attendance_by_department,
+            'recent_trends': recent_trends
         })
 
 

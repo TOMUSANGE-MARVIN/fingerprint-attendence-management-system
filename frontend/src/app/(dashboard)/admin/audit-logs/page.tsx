@@ -59,7 +59,7 @@ export default function AdminAuditLogsPage() {
       render: (l) => (
         <div className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400">
           <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
-          {formatTimestamp(l.timestamp)}
+          {formatTimestamp(l.createdAt || l.timestamp || "")}
         </div>
       ),
     },
@@ -67,7 +67,7 @@ export default function AdminAuditLogsPage() {
       key: "user",
       header: "User",
       render: (l) => (
-        <span className="font-medium text-gray-900 dark:text-gray-100">{l.userName}</span>
+        <span className="font-medium text-gray-900 dark:text-gray-100">{l.userName || l.userEmail || "Unknown"}</span>
       ),
     },
     {
@@ -83,7 +83,7 @@ export default function AdminAuditLogsPage() {
       header: "Resource",
       render: (l) => (
         <span className="text-gray-700 dark:text-gray-300">
-          {l.resource}{l.resourceId ? ` #${l.resourceId}` : ""}
+          {l.entityType || l.resource}{l.entityId || l.resourceId ? ` #${l.entityId || l.resourceId}` : ""}
         </span>
       ),
     },
@@ -91,14 +91,14 @@ export default function AdminAuditLogsPage() {
       key: "details",
       header: "Details",
       render: (l) => (
-        <span className="text-sm text-gray-500 dark:text-gray-400">{l.details}</span>
+        <span className="text-sm text-gray-500 dark:text-gray-400">{l.description || l.details || "-"}</span>
       ),
     },
     {
       key: "ip",
       header: "IP Address",
       render: (l) => (
-        <span className="text-xs font-mono text-gray-500 dark:text-gray-400">{l.ipAddress}</span>
+        <span className="text-xs font-mono text-gray-500 dark:text-gray-400">{l.ipAddress || "-"}</span>
       ),
     },
   ];

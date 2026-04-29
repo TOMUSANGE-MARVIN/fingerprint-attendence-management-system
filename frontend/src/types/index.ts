@@ -8,6 +8,7 @@
 // ============================================================================
 
 export type UserRole = "student" | "lecturer" | "admin";
+export type StudyTime = "day" | "evening" | "weekend";
 
 export interface User {
   id: string;
@@ -18,6 +19,10 @@ export interface User {
   studentId?: string; // Only for students
   staffId?: string; // Only for lecturers/admins
   department?: string;
+  studyTime?: StudyTime;
+  academicYear?: string | null; // FK id to AcademicYear (students)
+  academicYearLabel?: string | null;
+  program?: string;
   profileImage?: string;
   isActive: boolean;
   fingerprintRegistered?: boolean;
@@ -85,6 +90,11 @@ export interface Programme {
   createdAt: string;
 }
 
+export interface CohortGroupCoordinator {
+  coordinatorId: string | null;
+  coordinatorName: string | null;
+}
+
 export interface Cohort {
   id: string;
   programme: string;
@@ -94,6 +104,7 @@ export interface Cohort {
   intakeYearLabel: string;
   coordinator?: string;
   coordinatorName?: string;
+  groupCoordinators?: Record<string, CohortGroupCoordinator>;
   name: string;
   currentYearOfStudy?: number;
   currentSemesterLabel?: string;
@@ -119,8 +130,10 @@ export interface Course {
 
 export interface TimetableSlot {
   id: string;
-  courseId: string;
-  course: Pick<Course, "id" | "code" | "name">;
+  course: string; // FK id
+  courseCode: string;
+  courseName: string;
+  lecturerName?: string;
   cohort?: string;
   cohortName?: string;
   dayOfWeek: string; // "monday", "tuesday", etc.
@@ -128,6 +141,7 @@ export interface TimetableSlot {
   endTime: string;
   room?: string;
   building?: string;
+  studyTime?: StudyTime;
   isActive: boolean;
 }
 
@@ -162,7 +176,7 @@ export interface AttendanceRecord {
 }
 
 export interface StudentAttendanceSummary {
-  courseId: number;
+  courseId: string | number;
   courseCode: string;
   courseName: string;
   studentId?: string;
@@ -226,14 +240,22 @@ export interface AttendanceAnalytics {
 
 export interface AuditLog {
   id: number;
-  userId: number;
-  userName: string;
+  user?: number;
+  userName?: string;
+  userEmail?: string;
   action: string;
-  resource: string;
+  entityType?: string;
+  entityId?: string;
+  description?: string;
+  ipAddress?: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  // Legacy fields for compatibility
+  resource?: string;
   resourceId?: number;
   details?: string;
-  ipAddress: string;
-  timestamp: string;
+  timestamp?: string;
+  userId?: number;
 }
 
 export interface InstitutionAnalytics {
@@ -280,7 +302,7 @@ export interface ApiResponse<T> {
 export type NotificationType = "attendance" | "alert" | "system" | "report" | "fingerprint" | "upcoming_lecture" | "missed_lecture";
 
 export interface Notification {
-  id: number;
+  id: string | number;
   type: NotificationType;
   title: string;
   message: string;

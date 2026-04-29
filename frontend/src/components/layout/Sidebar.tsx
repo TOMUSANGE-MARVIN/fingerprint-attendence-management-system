@@ -5,15 +5,17 @@
  * Responsive sidebar with role-based navigation items
  */
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import { UserRole } from "@/types";
+import { apiClient, API_ENDPOINTS } from "@/lib/api";
 import {
   LayoutDashboard,
   Users,
+  Users2,
   BookOpen,
   Calendar,
   BarChart3,
@@ -28,6 +30,7 @@ import {
   Fingerprint,
   Building2,
   CalendarDays,
+  ClipboardCheck,
 } from "lucide-react";
 
 interface NavItem {
@@ -35,6 +38,7 @@ interface NavItem {
   href: string;
   icon: React.ReactNode;
   roles: UserRole[];
+  coordinatorOnly?: boolean;
 }
 
 // Navigation items configuration
@@ -64,6 +68,21 @@ const navigationItems: NavItem[] = [
     icon: <Calendar className="w-5 h-5" />,
     roles: ["student"],
   },
+  // Coordinator-only items (shown only when the student is a coordinator)
+  {
+    label: "My Class",
+    href: "/student/coordinator/class",
+    icon: <Users2 className="w-5 h-5" />,
+    roles: ["student"],
+    coordinatorOnly: true,
+  },
+  {
+    label: "Attendance",
+    href: "/student/coordinator/attendance",
+    icon: <ClipboardCheck className="w-5 h-5" />,
+    roles: ["student"],
+    coordinatorOnly: true,
+  },
 
   // Lecturer Navigation
   {
@@ -79,7 +98,7 @@ const navigationItems: NavItem[] = [
     roles: ["lecturer"],
   },
   {
-    label: "Take Attendance",
+    label: "Attendance",
     href: "/lecturer/attendance",
     icon: <ClipboardList className="w-5 h-5" />,
     roles: ["lecturer"],
@@ -123,7 +142,7 @@ const navigationItems: NavItem[] = [
     roles: ["admin"],
   },
   {
-    label: "Faculties",
+    label: "Departments",
     href: "/admin/faculties",
     icon: <Building2 className="w-5 h-5" />,
     roles: ["admin"],
@@ -159,21 +178,15 @@ const navigationItems: NavItem[] = [
     roles: ["admin"],
   },
   {
-    label: "Fingerprint Mgmt",
-    href: "/admin/fingerprint",
-    icon: <Fingerprint className="w-5 h-5" />,
+    label: "Attendance",
+    href: "/admin/attendance",
+    icon: <ClipboardList className="w-5 h-5" />,
     roles: ["admin"],
   },
   {
     label: "Analytics",
     href: "/admin/analytics",
     icon: <BarChart3 className="w-5 h-5" />,
-    roles: ["admin"],
-  },
-  {
-    label: "Audit Logs",
-    href: "/admin/audit-logs",
-    icon: <Shield className="w-5 h-5" />,
     roles: ["admin"],
   },
   {
@@ -192,11 +205,27 @@ interface SidebarProps {
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const { user } = useAuth();
   const pathname = usePathname();
+  const [isCoordinator, setIsCoordinator] = useState(false);
 
-  // Filter navigation items based on user role
-  const filteredNavItems = navigationItems.filter(
-    (item) => user && item.roles.includes(user.role)
-  );
+  useEffect(() => {
+    if (user?.role === "student") {
+      apiClient
+        .get<{ isCoordinator: boolean }>(API_ENDPOINTS.courses.myCoordinated)
+        .then((res) => {
+          setIsCoordinator(!!res.data.isCoordinator);
+        })
+        .catch(() => {
+          setIsCoordinator(false);
+        });
+    }
+  }, [user]);
+
+  // Filter navigation items based on user role and coordinator status
+  const filteredNavItems = navigationItems.filter((item) => {
+    if (!user || !item.roles.includes(user.role)) return false;
+    if (item.coordinatorOnly && !isCoordinator) return false;
+    return true;
+  });
 
   return (
     <>

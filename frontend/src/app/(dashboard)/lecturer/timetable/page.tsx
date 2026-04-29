@@ -54,11 +54,10 @@ export default function LecturerTimetablePage() {
       } catch {
         // Demo data
         setSlots([
-          { id: "1", courseId: "1", course: { id: 1, code: "BIT201", name: "Data Structures" }, dayOfWeek: "monday", startTime: "09:00", endTime: "11:00", room: "Lab A", isActive: true },
-          { id: "2", courseId: "2", course: { id: 2, code: "BIT301", name: "Software Engineering" }, dayOfWeek: "monday", startTime: "14:00", endTime: "16:00", room: "LT3", isActive: true },
-          { id: "3", courseId: "1", course: { id: 1, code: "BIT201", name: "Data Structures" }, dayOfWeek: "wednesday", startTime: "10:00", endTime: "12:00", room: "Lab A", isActive: true },
-          { id: "4", courseId: "2", course: { id: 2, code: "BIT301", name: "Software Engineering" }, dayOfWeek: "thursday", startTime: "09:00", endTime: "11:00", room: "LT3", isActive: true },
-          { id: "5", courseId: "1", course: { id: 1, code: "BIT201", name: "Data Structures" }, dayOfWeek: "friday", startTime: "11:00", endTime: "13:00", room: "Lab A", isActive: true },
+          { id: "1", course: "1", courseCode: "BIT201", courseName: "Data Structures", dayOfWeek: "monday", startTime: "08:00", endTime: "10:00", room: "LT3", isActive: true },
+          { id: "2", course: "2", courseCode: "BIT301", courseName: "Software Engineering", dayOfWeek: "tuesday", startTime: "13:00", endTime: "15:00", room: "LT5", isActive: true },
+          { id: "3", course: "1", courseCode: "BIT201", courseName: "Data Structures", dayOfWeek: "wednesday", startTime: "10:00", endTime: "12:00", room: "LT3", isActive: true },
+          { id: "4", course: "2", courseCode: "BIT301", courseName: "Software Engineering", dayOfWeek: "friday", startTime: "08:00", endTime: "10:00", room: "LT5", isActive: true },
         ]);
       } finally {
         setIsLoading(false);
@@ -108,7 +107,7 @@ export default function LecturerTimetablePage() {
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Weekly Sessions</p>
         </Card>
         <Card className="text-center">
-          <p className="text-3xl font-bold text-primary-600">{new Set(slots.map(s => s.courseId)).size}</p>
+          <p className="text-3xl font-bold text-primary-600">{new Set(slots.map(s => s.course)).size}</p>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Courses</p>
         </Card>
         <Card className="text-center">
@@ -139,10 +138,10 @@ export default function LecturerTimetablePage() {
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="font-semibold text-gray-900 dark:text-white">{slot.course.code}</p>
+                      <p className="font-semibold text-gray-900 dark:text-white">{slot.courseCode}</p>
                       {isNow && <Badge variant="success" dot>Now</Badge>}
                     </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{slot.course.name}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{slot.courseName}</p>
                     <div className="flex items-center gap-4 mt-1.5 text-xs text-gray-500 dark:text-gray-400">
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
@@ -204,7 +203,7 @@ export default function LecturerTimetablePage() {
           <div className="space-y-3">
             {slotsForDay.map((slot, idx) => {
               const isNow = isNowInSlot(slot, selectedDay);
-              const colorClass = SLOT_COLORS[slot.courseId.split("").reduce((a, c) => a + c.charCodeAt(0), 0) % SLOT_COLORS.length];
+              const colorClass = SLOT_COLORS[(slot.courseCode ?? slot.course ?? "").split("").reduce((a: number, c: string) => a + c.charCodeAt(0), 0) % SLOT_COLORS.length];
               return (
                 <div
                   key={slot.id}
@@ -226,11 +225,11 @@ export default function LecturerTimetablePage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono text-xs font-bold px-2 py-0.5 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300">
-                        {slot.course.code}
+                        {slot.courseCode}
                       </span>
                       {isNow && <Badge variant="success" dot>In Progress</Badge>}
                     </div>
-                    <p className="mt-1 font-semibold text-gray-900 dark:text-gray-100">{slot.course.name}</p>
+                    <p className="mt-1 font-semibold text-gray-900 dark:text-gray-100">{slot.courseName}</p>
                     <div className="flex flex-wrap items-center gap-4 mt-1.5 text-sm text-gray-500 dark:text-gray-400">
                       <span className="flex items-center gap-1.5">
                         <MapPin className="w-3.5 h-3.5" />
@@ -292,9 +291,9 @@ export default function LecturerTimetablePage() {
                     {daySlots.map((slot) => (
                       <div
                         key={slot.id}
-                        className={cn("rounded-lg p-1.5 border text-xs", SLOT_COLORS[slot.courseId.split("").reduce((a, c) => a + c.charCodeAt(0), 0) % SLOT_COLORS.length])}
+                        className={cn("rounded-lg p-1.5 border text-xs", SLOT_COLORS[(slot.courseCode ?? slot.course ?? "").split("").reduce((a: number, c: string) => a + c.charCodeAt(0), 0) % SLOT_COLORS.length])}
                       >
-                        <p className="font-bold text-gray-800 dark:text-gray-200">{slot.course.code}</p>
+                        <p className="font-bold text-gray-800 dark:text-gray-200">{slot.courseCode}</p>
                         <p className="text-gray-500 dark:text-gray-400">{slot.startTime}</p>
                       </div>
                     ))}

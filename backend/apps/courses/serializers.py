@@ -3,7 +3,7 @@ Serializers for Course models.
 """
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Course, Enrollment, TimetableSlot, Faculty, AcademicPeriod, AcademicYear, Programme, Cohort
+from .models import Course, Enrollment, TimetableSlot, Faculty, AcademicPeriod, AcademicYear, Programme, Cohort, CohortGroupCoordinator
 
 User = get_user_model()
 
@@ -33,6 +33,7 @@ class CohortSerializer(serializers.ModelSerializer):
     programme_name = serializers.CharField(source='programme.name', read_only=True)
     intake_year_label = serializers.CharField(source='intake_year.label', read_only=True)
     coordinator_name = serializers.CharField(source='coordinator.full_name', read_only=True, default=None)
+    group_coordinators = serializers.SerializerMethodField()
     name = serializers.ReadOnlyField()
     current_year_of_study = serializers.ReadOnlyField()
     current_semester_label = serializers.ReadOnlyField()
@@ -43,6 +44,7 @@ class CohortSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'programme', 'programme_code', 'programme_name',
             'intake_year', 'intake_year_label', 'coordinator', 'coordinator_name',
+            'group_coordinators',
             'name', 'current_year_of_study', 'current_semester_label',
             'student_count', 'is_active', 'created_at'
         ]
@@ -51,24 +53,46 @@ class CohortSerializer(serializers.ModelSerializer):
     def get_student_count(self, obj):
         return obj.students.filter(is_active=True).count()
 
+    def get_group_coordinators(self, obj):
+        entries = CohortGroupCoordinator.objects.filter(cohort=obj).select_related('coordinator')
+        result = {}
+        for entry in entries:
+            result[entry.study_time] = {
+                'coordinator_id': str(entry.coordinator_id) if entry.coordinator_id else None,
+                'coordinator_name': (
+                    f"{entry.coordinator.first_name} {entry.coordinator.last_name}".strip()
+                    if entry.coordinator else None
+                ),
+            }
+        return result
+
 
 class TimetableSlotSerializer(serializers.ModelSerializer):
     """Serializer for TimetableSlot model."""
 
     duration_minutes = serializers.ReadOnlyField()
-    course_code = serializers.CharField(source='course.code', read_only=True)
-    course_name = serializers.CharField(source='course.name', read_only=True)
-    cohort_name = serializers.CharField(source='cohort.name', read_only=True, default=None)
+    course_code  = serializers.CharField(source='course.code', read_only=True)
+    course_name  = serializers.CharField(source='course.name', read_only=True)
+    cohort_name  = serializers.CharField(source='cohort.name', read_only=True, default=None)
+    lecturer_name = serializers.SerializerMethodField()
 
     class Meta:
         model = TimetableSlot
         fields = [
             'id', 'course', 'course_code', 'course_name',
             'cohort', 'cohort_name',
+            'lecturer', 'lecturer_name',
             'day_of_week', 'start_time', 'end_time',
-            'room', 'building', 'duration_minutes', 'is_active'
+            'room', 'building', 'study_time', 'duration_minutes', 'is_active'
         ]
         read_only_fields = ['id']
+
+    def get_lecturer_name(self, obj):
+        # Use slot-specific lecturer first, fall back to course lecturer
+        lec = obj.lecturer or (obj.course.lecturer if obj.course else None)
+        if lec:
+            return f"{lec.first_name} {lec.last_name}".strip()
+        return None
 
 
 
@@ -106,6 +130,13 @@ class CourseListSerializer(serializers.ModelSerializer):
     faculty_name = serializers.CharField(source='faculty.name', read_only=True, default=None)
     academic_period_display = serializers.CharField(source='academic_period.__str__', read_only=True, default=None)
     programme_code = serializers.CharField(source='programme.code', read_only=True, default=None)
+    coordinator_name = serializers.SerializerMethodField()
+    coordinator_id = serializers.CharField(source='coordinator.id', read_only=True, default=None)
+
+    def get_coordinator_name(self, obj):
+        if obj.coordinator:
+            return f"{obj.coordinator.first_name} {obj.coordinator.last_name}".strip()
+        return None
 
     class Meta:
         model = Course
@@ -114,6 +145,7 @@ class CourseListSerializer(serializers.ModelSerializer):
             'faculty', 'faculty_name', 'academic_period', 'academic_period_display',
             'programme', 'programme_code', 'year_level', 'semester_number',
             'lecturer', 'lecturer_name', 'total_students', 'attendance_threshold',
+            'coordinator', 'coordinator_id', 'coordinator_name',
             'is_active', 'schedule', 'created_at'
         ]
 
@@ -129,6 +161,13 @@ class CourseDetailSerializer(serializers.ModelSerializer):
     academic_period_display = serializers.CharField(source='academic_period.__str__', read_only=True, default=None)
     programme_code = serializers.CharField(source='programme.code', read_only=True, default=None)
     programme_name = serializers.CharField(source='programme.name', read_only=True, default=None)
+    coordinator_name = serializers.SerializerMethodField()
+    coordinator_id = serializers.CharField(source='coordinator.id', read_only=True, default=None)
+
+    def get_coordinator_name(self, obj):
+        if obj.coordinator:
+            return f"{obj.coordinator.first_name} {obj.coordinator.last_name}".strip()
+        return None
 
     class Meta:
         model = Course
@@ -139,6 +178,7 @@ class CourseDetailSerializer(serializers.ModelSerializer):
             'programme', 'programme_code', 'programme_name', 'year_level', 'semester_number',
             'lecturer', 'lecturer_name',
             'lecturer_info', 'total_students', 'attendance_threshold',
+            'coordinator', 'coordinator_id', 'coordinator_name',
             'is_active', 'schedule', 'created_at', 'updated_at'
         ]
     
@@ -156,15 +196,19 @@ class CourseDetailSerializer(serializers.ModelSerializer):
 class CourseCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating courses."""
 
+    department = serializers.CharField(required=False, allow_blank=True, default="")
+    semester = serializers.CharField(required=False, allow_blank=True, default="")
+    academic_year = serializers.CharField(required=False, allow_blank=True, default="")
+
     class Meta:
         model = Course
         fields = [
             'code', 'name', 'description', 'credits', 'department',
             'semester', 'academic_year', 'faculty', 'academic_period',
             'programme', 'year_level', 'semester_number',
-            'lecturer', 'attendance_threshold', 'is_active'
+            'lecturer', 'coordinator', 'attendance_threshold', 'is_active'
         ]
-    
+
     def validate_lecturer(self, value):
         if value and value.role != 'lecturer':
             raise serializers.ValidationError("Selected user is not a lecturer.")

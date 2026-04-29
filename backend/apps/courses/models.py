@@ -157,7 +157,10 @@ class Cohort(models.Model):
         """Compute the current year of study based on the current academic year."""
         current = AcademicYear.objects.filter(is_current=True).first()
         if current:
-            return current.start_year - self.intake_year.start_year + 1
+            computed = current.start_year - self.intake_year.start_year + 1
+            if self.programme and self.programme.duration_years:
+                return max(1, min(computed, self.programme.duration_years))
+            return max(1, computed)
         return None
 
     @property
@@ -172,6 +175,37 @@ class Cohort(models.Model):
         return None
 
 
+class CohortGroupCoordinator(models.Model):
+    """One student coordinator per study-time group within a cohort."""
+    STUDY_TIME_CHOICES = [
+        ('day', 'Day'),
+        ('evening', 'Evening'),
+        ('weekend', 'Weekend'),
+    ]
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    cohort = models.ForeignKey(
+        Cohort,
+        on_delete=models.CASCADE,
+        related_name='group_coordinators'
+    )
+    study_time = models.CharField(max_length=10, choices=STUDY_TIME_CHOICES)
+    coordinator = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='coordinated_groups',
+        limit_choices_to={'role': 'student'}
+    )
+
+    class Meta:
+        db_table = 'cohort_group_coordinators'
+        unique_together = ['cohort', 'study_time']
+
+    def __str__(self):
+        return f"{self.cohort} · {self.study_time} coordinator"
+
+
 class Course(models.Model):
     """
     Course model representing a subject/course in the institution.
@@ -182,9 +216,9 @@ class Course(models.Model):
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True, null=True)
     credits = models.IntegerField(default=3)
-    department = models.CharField(max_length=100)
-    semester = models.CharField(max_length=20)  # e.g., "Fall 2024", "Spring 2025"
-    academic_year = models.CharField(max_length=20)  # e.g., "2024-2025"
+    department = models.CharField(max_length=100, blank=True, default="")
+    semester = models.CharField(max_length=20, blank=True, default="")
+    academic_year = models.CharField(max_length=20, blank=True, default="")
     faculty = models.ForeignKey(
         'Faculty',
         on_delete=models.SET_NULL,
@@ -216,6 +250,14 @@ class Course(models.Model):
         null=True,
         related_name='taught_courses',
         limit_choices_to={'role': 'lecturer'}
+    )
+    coordinator = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='coordinated_courses',
+        limit_choices_to={'role': 'student'}
     )
     students = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
@@ -329,7 +371,13 @@ class TimetableSlot(models.Model):
         ('saturday', 'Saturday'),
         ('sunday', 'Sunday'),
     ]
-    
+
+    STUDY_TIME_CHOICES = [
+        ('day', 'Day'),
+        ('evening', 'Evening'),
+        ('weekend', 'Weekend'),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     course = models.ForeignKey(
         Course,
@@ -344,12 +392,22 @@ class TimetableSlot(models.Model):
         related_name='timetable_slots'
     )
 
+    lecturer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='timetable_slots',
+        limit_choices_to={'role': 'lecturer'}
+    )
+
     day_of_week = models.CharField(max_length=10, choices=DAY_CHOICES)
     start_time = models.TimeField()
     end_time = models.TimeField()
     room = models.CharField(max_length=50, blank=True, null=True)
     building = models.CharField(max_length=100, blank=True, null=True)
-    
+    study_time = models.CharField(max_length=10, choices=STUDY_TIME_CHOICES, default='day')
+
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Button, Input, Card } from "@/components/ui";
-import { Mail, Lock, AlertCircle, Fingerprint } from "lucide-react";
+import { Mail, Lock, AlertCircle, Fingerprint, Eye, EyeOff } from "lucide-react";
 import { isValidEmail } from "@/lib/utils";
 
 export default function LoginPage() {
@@ -13,6 +13,7 @@ export default function LoginPage() {
 
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [formErrors, setFormErrors] = useState({ email: "", password: "" });
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated && user) {
@@ -82,12 +83,23 @@ export default function LoginPage() {
 
         <Input
           label="Password"
-          type="password"
+          type={showPassword ? "text" : "password"}
           placeholder="Enter your password"
           value={formData.password}
           onChange={handleInputChange("password")}
           error={formErrors.password}
           leftIcon={<Lock className="w-5 h-5" />}
+          rightIcon={
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              disabled={isLoading}
+            >
+              {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            </button>
+          }
           autoComplete="current-password"
           disabled={isLoading}
         />

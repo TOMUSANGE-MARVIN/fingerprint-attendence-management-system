@@ -2,12 +2,9 @@
 
 import React, { useState } from "react";
 import { Card, CardHeader, Button, Input, Badge } from "@/components/ui";
-import { Fingerprint, Save, CheckCircle2 } from "lucide-react";
+import { Save, CheckCircle2 } from "lucide-react";
 
 export default function AdminSettingsPage() {
-  const [fingerprintThreshold, setFingerprintThreshold] = useState("60");
-  const [qualityThreshold, setQualityThreshold] = useState("50");
-  const [maxAttempts, setMaxAttempts] = useState("3");
   const [attendanceThreshold, setAttendanceThreshold] = useState("75");
   const [reminderMinutes, setReminderMinutes] = useState("15");
   const [isSaving, setIsSaving] = useState(false);
@@ -36,55 +33,6 @@ export default function AdminSettingsPage() {
           <span className="text-sm">Settings saved successfully.</span>
         </div>
       )}
-
-      <Card>
-        <CardHeader
-          title="Fingerprint Configuration"
-          subtitle="Mantra MFS100 matching parameters"
-        />
-        <div className="space-y-4">
-          <div className="flex items-start gap-3 p-3 bg-primary-50 dark:bg-primary-950/30 border border-primary-200 dark:border-primary-800 rounded-lg">
-            <Fingerprint className="w-5 h-5 text-primary-600 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-primary-700 dark:text-primary-300">
-              Ensure the Mantra MFS100 RD Service is running on the client machine. The browser must
-              accept the self-signed certificate at{" "}
-              <code className="text-xs bg-primary-100 dark:bg-primary-900 px-1 rounded">
-                https://localhost:11100
-              </code>{" "}
-              once before use.
-            </p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Input
-              label="Match Threshold (0–100)"
-              type="number"
-              min="0"
-              max="100"
-              value={fingerprintThreshold}
-              onChange={(e) => setFingerprintThreshold(e.target.value)}
-              hint="Minimum similarity score for a match"
-            />
-            <Input
-              label="Quality Threshold (%)"
-              type="number"
-              min="0"
-              max="100"
-              value={qualityThreshold}
-              onChange={(e) => setQualityThreshold(e.target.value)}
-              hint="Minimum capture quality to accept"
-            />
-            <Input
-              label="Max Capture Attempts"
-              type="number"
-              min="1"
-              max="10"
-              value={maxAttempts}
-              onChange={(e) => setMaxAttempts(e.target.value)}
-              hint="Retries before failing capture"
-            />
-          </div>
-        </div>
-      </Card>
 
       <Card>
         <CardHeader title="Attendance Rules" subtitle="Thresholds and notification timing" />
@@ -116,8 +64,7 @@ export default function AdminSettingsPage() {
           {[
             { label: "Backend", value: "Django 4.2 + DRF" },
             { label: "Frontend", value: "Next.js 14" },
-            { label: "Fingerprint SDK", value: "Mantra MFS100 RD Service" },
-            { label: "Matching Library", value: "SourceAFIS" },
+            { label: "Database", value: "SQLite / MySQL" },
           ].map(({ label, value }) => (
             <div
               key={label}

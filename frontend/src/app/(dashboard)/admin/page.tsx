@@ -48,19 +48,40 @@ export default function AdminDashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [analytics, setAnalytics] = useState<InstitutionAnalytics | null>(null);
+  const [recentUsers, setRecentUsers] = useState<User[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [activeTab, setActiveTab] = useState<"overview" | "users" | "logs">("overview");
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setIsLoading(true);
-        const response = await apiClient.get<InstitutionAnalytics>(
-          API_ENDPOINTS.admin.analytics
+        setError(null);
+        
+        // Fetch all data in parallel
+        const [analyticsRes, usersRes, logsRes] = await Promise.all([
+          apiClient.get<InstitutionAnalytics>(API_ENDPOINTS.analytics.dashboard),
+          apiClient.get<{ results?: User[] } | User[]>(API_ENDPOINTS.admin.users),
+          apiClient.get<{ results?: AuditLog[] } | AuditLog[]>(API_ENDPOINTS.admin.auditLogs),
+        ]);
+        
+        setAnalytics(analyticsRes.data);
+        
+        // Handle paginated or non-paginated response
+        const usersData = usersRes.data;
+        setRecentUsers(
+          Array.isArray(usersData) ? usersData.slice(0, 10) : 
+          (usersData.results || []).slice(0, 10)
         );
-        setAnalytics(response.data);
+        
+        const logsData = logsRes.data;
+        setAuditLogs(
+          Array.isArray(logsData) ? logsData.slice(0, 10) : 
+          (logsData.results || []).slice(0, 10)
+        );
       } catch (err) {
-        // Fall through to demo data — backend may not be running
-        console.warn("Dashboard fetch error:", err);
+        console.error("Dashboard fetch error:", err);
+        setError("Failed to load some dashboard data.");
       } finally {
         setIsLoading(false);
       }
@@ -69,45 +90,20 @@ export default function AdminDashboardPage() {
     fetchData();
   }, []);
 
-  // Demo data for visualization
+  // Demo data for visualization (fallback when API fails or returns empty)
   const demoAnalytics: InstitutionAnalytics = analytics || {
-    totalStudents: 1245,
-    totalLecturers: 48,
-    totalCourses: 86,
-    averageAttendance: 81.5,
-    studentsAtRisk: 156,
-    attendanceByDepartment: [
-      { department: "Computer Science", percentage: 85.2, studentCount: 320 },
-      { department: "Engineering", percentage: 78.5, studentCount: 280 },
-      { department: "Business", percentage: 82.1, studentCount: 245 },
-      { department: "Medicine", percentage: 91.3, studentCount: 180 },
-      { department: "Law", percentage: 79.8, studentCount: 120 },
-      { department: "Arts", percentage: 76.4, studentCount: 100 },
-    ],
-    recentTrends: [
-      { period: "Week 1", percentage: 84, sessionsAttended: 4200, totalSessions: 5000 },
-      { period: "Week 2", percentage: 81, sessionsAttended: 4050, totalSessions: 5000 },
-      { period: "Week 3", percentage: 83, sessionsAttended: 4150, totalSessions: 5000 },
-      { period: "Week 4", percentage: 79, sessionsAttended: 3950, totalSessions: 5000 },
-      { period: "Week 5", percentage: 82, sessionsAttended: 4100, totalSessions: 5000 },
-      { period: "Week 6", percentage: 80, sessionsAttended: 4000, totalSessions: 5000 },
-    ],
+    totalStudents: 0,
+    totalLecturers: 0,
+    totalCourses: 0,
+    averageAttendance: 0,
+    studentsAtRisk: 0,
+    attendanceByDepartment: [],
+    recentTrends: [],
   };
 
-  const demoRecentUsers: User[] = [
-    { id: "1", email: "john.student@university.edu", firstName: "John", lastName: "Doe", role: "student" as const, studentId: "STU001", isActive: true, createdAt: "2026-02-08T10:30:00Z" },
-    { id: "2", email: "jane.lecturer@university.edu", firstName: "Jane", lastName: "Smith", role: "lecturer" as const, staffId: "LEC001", department: "Computer Science", isActive: true, createdAt: "2026-02-07T14:20:00Z" },
-    { id: "3", email: "mike.student@university.edu", firstName: "Mike", lastName: "Johnson", role: "student" as const, studentId: "STU002", isActive: true, createdAt: "2026-02-06T09:15:00Z" },
-    { id: "4", email: "sarah.admin@university.edu", firstName: "Sarah", lastName: "Williams", role: "admin" as const, staffId: "ADM001", isActive: true, createdAt: "2026-02-05T11:45:00Z" },
-  ];
-
-  const demoAuditLogs: AuditLog[] = [
-    { id: 1, userId: 1, userName: "John Doe", action: "LOGIN", resource: "Auth", timestamp: "2026-02-08T10:30:00Z", ipAddress: "192.168.1.100" },
-    { id: 2, userId: 2, userName: "Jane Smith", action: "START_SESSION", resource: "Attendance", resourceId: 45, details: "CS301 - Database Systems", timestamp: "2026-02-08T09:00:00Z", ipAddress: "192.168.1.101" },
-    { id: 3, userId: 3, userName: "Admin User", action: "CREATE", resource: "User", resourceId: 156, details: "Created new student account", timestamp: "2026-02-08T08:30:00Z", ipAddress: "192.168.1.1" },
-    { id: 4, userId: 2, userName: "Jane Smith", action: "END_SESSION", resource: "Attendance", resourceId: 45, details: "45 students marked present", timestamp: "2026-02-08T10:30:00Z", ipAddress: "192.168.1.101" },
-    { id: 5, userId: 4, userName: "System", action: "GENERATE_REPORT", resource: "Reports", details: "Monthly attendance report generated", timestamp: "2026-02-08T06:00:00Z", ipAddress: "127.0.0.1" },
-  ];
+  // Use live data, fallback to empty if not available
+  const displayUsers: User[] = recentUsers.length > 0 ? recentUsers : [];
+  const displayLogs: AuditLog[] = auditLogs.length > 0 ? auditLogs : [];
 
   // Department chart data
   const departmentChartData = (demoAnalytics.attendanceByDepartment ?? []).map(d => ({
@@ -186,19 +182,22 @@ export default function AdminDashboardPage() {
     {
       key: "timestamp",
       header: "Time",
-      render: (log) => (
-        <div>
-          <p className="text-gray-900">{formatDate(log.timestamp)}</p>
-          <p className="text-sm text-gray-500">
-            {formatTime(log.timestamp.split("T")[1].substring(0, 5))}
-          </p>
-        </div>
-      ),
+      render: (log) => {
+        const timestamp = log.createdAt || log.timestamp || "";
+        return (
+          <div>
+            <p className="text-gray-900">{formatDate(timestamp)}</p>
+            <p className="text-sm text-gray-500">
+              {timestamp ? formatTime(timestamp.split("T")[1]?.substring(0, 5) || "") : "-"}
+            </p>
+          </div>
+        );
+      },
     },
     {
       key: "user",
       header: "User",
-      render: (log) => <span className="font-medium text-gray-900">{log.userName}</span>,
+      render: (log) => <span className="font-medium text-gray-900">{log.userName || log.userEmail || "Unknown"}</span>,
     },
     {
       key: "action",
@@ -206,7 +205,7 @@ export default function AdminDashboardPage() {
       render: (log) => (
         <Badge
           variant={
-            log.action.includes("CREATE") || log.action.includes("START")
+            log.action.includes("CREATE") || log.action.includes("START") || log.action.includes("LOGIN")
               ? "success"
               : log.action.includes("DELETE")
               ? "danger"
@@ -220,20 +219,20 @@ export default function AdminDashboardPage() {
     {
       key: "resource",
       header: "Resource",
-      render: (log) => <span className="text-gray-600">{log.resource}</span>,
+      render: (log) => <span className="text-gray-600">{log.entityType || log.resource || "-"}</span>,
     },
     {
       key: "details",
       header: "Details",
       render: (log) => (
-        <span className="text-gray-500 text-sm">{log.details || "-"}</span>
+        <span className="text-gray-500 text-sm">{log.description || log.details || "-"}</span>
       ),
     },
     {
       key: "ipAddress",
       header: "IP Address",
       render: (log) => (
-        <span className="font-mono text-sm text-gray-500">{log.ipAddress}</span>
+        <span className="font-mono text-sm text-gray-500">{log.ipAddress || "-"}</span>
       ),
     },
   ];
@@ -352,7 +351,7 @@ export default function AdminDashboardPage() {
           <Card>
             <CardHeader
               title="Attendance by Department"
-              subtitle="Compare performance across faculties"
+              subtitle="Compare performance across departments"
             />
             <InstitutionChart data={departmentChartData} height={300} />
           </Card>
@@ -450,8 +449,9 @@ export default function AdminDashboardPage() {
           />
           <Table
             columns={userColumns}
-            data={demoRecentUsers}
+            data={displayUsers}
             keyExtractor={(user) => user.id}
+            emptyMessage="No users found"
           />
         </Card>
       )}
@@ -474,8 +474,9 @@ export default function AdminDashboardPage() {
           />
           <Table
             columns={auditColumns}
-            data={demoAuditLogs}
+            data={displayLogs}
             keyExtractor={(log) => log.id}
+            emptyMessage="No audit logs found"
           />
         </Card>
       )}

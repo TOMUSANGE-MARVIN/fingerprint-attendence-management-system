@@ -34,26 +34,25 @@ import {
   Play,
   Square,
   FileText,
-  Calendar,
   CheckCircle,
   XCircle,
   TrendingUp,
 } from "lucide-react";
 import { formatDate, formatTime } from "@/lib/utils";
 
-// Define the interface for lecturer courses data
-interface LecturerCoursesData {
-  courses: Course[];
-  activeSessions: AttendanceSession[];
-  recentSessions: AttendanceSession[];
-  trends: AttendanceTrend[];
+interface LecturerCourse extends Course {
+  totalStudents?: number;
+  averageAttendance?: number;
 }
 
 export default function LecturerDashboardPage() {
   const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [coursesData, setCoursesData] = useState<LecturerCoursesData | null>(null);
+  const [courses, setCourses] = useState<LecturerCourse[]>([]);
+  const [activeSessions, setActiveSessions] = useState<AttendanceSession[]>([]);
+  const [recentSessions, setRecentSessions] = useState<AttendanceSession[]>([]);
+  const [trends, setTrends] = useState<AttendanceTrend[]>([]);
   const [isStartSessionModalOpen, setIsStartSessionModalOpen] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [isStartingSession, setIsStartingSession] = useState(false);
@@ -61,13 +60,36 @@ export default function LecturerDashboardPage() {
   useEffect(() => {
     const fetchData = async () => {
       if (!user) return;
-      
+
       try {
         setIsLoading(true);
-        const response = await apiClient.get<LecturerCoursesData>(
-          API_ENDPOINTS.lecturers.courses(user.id)
+
+        // Fetch lecturer's courses with per-course stats
+        const coursesRes = await apiClient.get<LecturerCourse[]>("/courses/my/lecturer/");
+        const fetchedCourses = Array.isArray(coursesRes.data)
+          ? coursesRes.data
+          : (coursesRes.data as any).results ?? [];
+        setCourses(fetchedCourses);
+
+        // Fetch sessions (all, ordered by date descending)
+        const sessionsRes = await apiClient.get<{ results?: AttendanceSession[]; count?: number } | AttendanceSession[]>(
+          `${API_ENDPOINTS.attendance.sessions}?ordering=-date&page_size=20`
         );
-        setCoursesData(response.data);
+        const sessionsData = sessionsRes.data;
+        const allSessions: AttendanceSession[] = Array.isArray(sessionsData)
+          ? sessionsData
+          : (sessionsData as any).results ?? [];
+
+        const active = allSessions.filter((s) => s.isActive);
+        const recent = allSessions.filter((s) => !s.isActive);
+        setActiveSessions(active);
+        setRecentSessions(recent);
+
+        // Compute weekly attendance trend from session data
+        if (allSessions.length > 0) {
+          const computed = computeWeeklyTrends(allSessions);
+          setTrends(computed);
+        }
       } catch (err) {
         setError("Failed to load dashboard data. Please try again.");
         console.error("Dashboard fetch error:", err);
@@ -79,53 +101,53 @@ export default function LecturerDashboardPage() {
     fetchData();
   }, [user]);
 
-  // Demo data for visualization
-  const demoCourses: Course[] = [
-    { id: 1, code: "CS301", name: "Database Systems", description: "", creditUnits: 3, department: "Computer Science", semester: "Fall", academicYear: "2025/2026", lecturer: { id: "1", firstName: "John", lastName: "Doe" }, enrolledStudents: 45 },
-    { id: 2, code: "CS302", name: "Software Engineering", description: "", creditUnits: 4, department: "Computer Science", semester: "Fall", academicYear: "2025/2026", lecturer: { id: "1", firstName: "John", lastName: "Doe" }, enrolledStudents: 52 },
-    { id: 3, code: "CS401", name: "Machine Learning", description: "", creditUnits: 3, department: "Computer Science", semester: "Fall", academicYear: "2025/2026", lecturer: { id: "1", firstName: "John", lastName: "Doe" }, enrolledStudents: 38 },
-  ];
+  /** Group sessions into weekly buckets and compute average attendance rate. */
+  function computeWeeklyTrends(sessions: AttendanceSession[]): AttendanceTrend[] {
+    const byWeek: Record<string, { present: number; total: number }> = {};
+    sessions.forEach((s) => {
+      const d = new Date(s.date);
+      // ISO week key: year + week number
+      const startOfYear = new Date(d.getFullYear(), 0, 1);
+      const weekNum = Math.ceil(
+        ((d.getTime() - startOfYear.getTime()) / 86400000 + startOfYear.getDay() + 1) / 7
+      );
+      const key = `${d.getFullYear()}-W${weekNum}`;
+      if (!byWeek[key]) byWeek[key] = { present: 0, total: 0 };
+      byWeek[key].present += (s.totalPresent ?? 0) + (s.totalLate ?? 0);
+      byWeek[key].total += (s.totalPresent ?? 0) + (s.totalAbsent ?? 0) + (s.totalLate ?? 0);
+    });
 
-  const demoActiveSessions: AttendanceSession[] = [
-    { id: 1, course: { id: 1, code: "CS301", name: "Database Systems" }, date: "2026-02-08", startTime: "09:00", isActive: true, totalPresent: 32, totalAbsent: 13, totalLate: 0, createdBy: { id: "1", firstName: "John", lastName: "Doe" } },
-  ];
+    return Object.entries(byWeek)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-6)
+      .map(([key, { present, total }]) => ({
+        period: key.replace(/^\d{4}-/, ""),
+        percentage: total > 0 ? Math.round((present / total) * 100) : 0,
+        sessionsAttended: present,
+        totalSessions: total,
+      }));
+  }
 
-  const demoRecentSessions: AttendanceSession[] = [
-    { id: 2, course: { id: 2, code: "CS302", name: "Software Engineering" }, date: "2026-02-07", startTime: "14:00", endTime: "15:30", isActive: false, totalPresent: 48, totalAbsent: 4, totalLate: 2, createdBy: { id: "1", firstName: "John", lastName: "Doe" } },
-    { id: 3, course: { id: 1, code: "CS301", name: "Database Systems" }, date: "2026-02-06", startTime: "09:00", endTime: "10:30", isActive: false, totalPresent: 41, totalAbsent: 4, totalLate: 1, createdBy: { id: "1", firstName: "John", lastName: "Doe" } },
-    { id: 4, course: { id: 3, code: "CS401", name: "Machine Learning" }, date: "2026-02-05", startTime: "11:00", endTime: "12:30", isActive: false, totalPresent: 35, totalAbsent: 3, totalLate: 0, createdBy: { id: "1", firstName: "John", lastName: "Doe" } },
-  ];
+  const totalStudents = courses.reduce(
+    (sum, c) => sum + ((c as any).totalStudents ?? c.enrolledStudents ?? 0),
+    0
+  );
 
-  const demoTrends: AttendanceTrend[] = [
-    { period: "Week 1", percentage: 92, sessionsAttended: 130, totalSessions: 141 },
-    { period: "Week 2", percentage: 88, sessionsAttended: 124, totalSessions: 141 },
-    { period: "Week 3", percentage: 90, sessionsAttended: 127, totalSessions: 141 },
-    { period: "Week 4", percentage: 85, sessionsAttended: 120, totalSessions: 141 },
-    { period: "Week 5", percentage: 91, sessionsAttended: 128, totalSessions: 141 },
-    { period: "Week 6", percentage: 89, sessionsAttended: 125, totalSessions: 141 },
-  ];
-
-  const courses = coursesData?.courses || demoCourses;
-  const activeSessions = coursesData?.activeSessions || demoActiveSessions;
-  const recentSessions = coursesData?.recentSessions || demoRecentSessions;
-  const trends = coursesData?.trends || demoTrends;
-
-  // Calculate stats
-  const totalStudents = courses.reduce((sum, c) => sum + c.enrolledStudents, 0);
-  const averageAttendance = trends.length > 0 
-    ? trends.reduce((sum, t) => sum + t.percentage, 0) / trends.length 
-    : 0;
+  const averageAttendance =
+    courses.length > 0
+      ? courses.reduce((sum, c) => sum + ((c as any).averageAttendance ?? 0), 0) /
+        courses.length
+      : 0;
 
   const handleStartSession = async () => {
     if (!selectedCourse) return;
-    
+
     setIsStartingSession(true);
     try {
       await apiClient.post(API_ENDPOINTS.attendance.startSession, {
         courseId: selectedCourse.id,
       });
       setIsStartSessionModalOpen(false);
-      // Refresh data
       window.location.reload();
     } catch (err) {
       console.error("Failed to start session:", err);
@@ -137,14 +159,12 @@ export default function LecturerDashboardPage() {
   const handleEndSession = async (sessionId: number) => {
     try {
       await apiClient.post(API_ENDPOINTS.attendance.endSession(sessionId));
-      // Refresh data
       window.location.reload();
     } catch (err) {
       console.error("Failed to end session:", err);
     }
   };
 
-  // Table columns for recent sessions
   const sessionColumns: TableColumn<AttendanceSession>[] = [
     {
       key: "course",
@@ -197,7 +217,7 @@ export default function LecturerDashboardPage() {
       key: "actions",
       header: "Actions",
       align: "right",
-      render: (session) => (
+      render: (session) =>
         session.isActive ? (
           <Button
             size="sm"
@@ -215,8 +235,7 @@ export default function LecturerDashboardPage() {
           >
             View Report
           </Button>
-        )
-      ),
+        ),
     },
   ];
 
@@ -226,10 +245,7 @@ export default function LecturerDashboardPage() {
 
   if (error) {
     return (
-      <ErrorState
-        message={error}
-        onRetry={() => window.location.reload()}
-      />
+      <ErrorState message={error} onRetry={() => window.location.reload()} />
     );
   }
 
@@ -296,8 +312,8 @@ export default function LecturerDashboardPage() {
               <div>
                 <h3 className="font-semibold text-gray-900">Active Attendance Session</h3>
                 <p className="text-gray-600">
-                  {activeSessions[0].course.code} - {activeSessions[0].course.name} | 
-                  Started at {formatTime(activeSessions[0].startTime)} | 
+                  {activeSessions[0].course.code} - {activeSessions[0].course.name} |{" "}
+                  Started at {formatTime(activeSessions[0].startTime)} |{" "}
                   {activeSessions[0].totalPresent} students present
                 </p>
               </div>
@@ -322,43 +338,50 @@ export default function LecturerDashboardPage() {
               title="Attendance Trends"
               subtitle="Weekly attendance across all courses"
             />
-            <AttendanceLineChart data={trends} height={300} />
+            {trends.length > 0 ? (
+              <AttendanceLineChart data={trends} height={300} />
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-gray-400 text-sm">
+                No session data available yet
+              </div>
+            )}
           </Card>
         </div>
 
         {/* My Courses - 1 column */}
         <div>
           <Card>
-            <CardHeader
-              title="My Courses"
-              action={
-                <button className="text-sm text-primary-600 hover:text-primary-700 font-medium">
-                  View All
-                </button>
-              }
-            />
-            <div className="space-y-3">
-              {courses.map((course) => (
-                <div
-                  key={course.id}
-                  className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-primary-50 rounded-lg">
-                      <BookOpen className="w-5 h-5 text-primary-600" />
+            <CardHeader title="My Courses" />
+            {courses.length === 0 ? (
+              <div className="py-8 text-center text-gray-400 text-sm">
+                No courses assigned yet
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {courses.map((course) => (
+                  <div
+                    key={course.id}
+                    className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-primary-50 rounded-lg">
+                        <BookOpen className="w-5 h-5 text-primary-600" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-900">{course.code}</p>
+                        <p className="text-sm text-gray-500">{course.name}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium text-gray-900">{course.code}</p>
-                      <p className="text-sm text-gray-500">{course.name}</p>
+                    <div className="text-right">
+                      <p className="font-medium text-gray-900">
+                        {(course as any).totalStudents ?? course.enrolledStudents ?? 0}
+                      </p>
+                      <p className="text-xs text-gray-500">students</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-medium text-gray-900">{course.enrolledStudents}</p>
-                    <p className="text-xs text-gray-500">students</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </Card>
         </div>
       </div>
@@ -368,16 +391,12 @@ export default function LecturerDashboardPage() {
         <CardHeader
           title="Recent Attendance Sessions"
           subtitle="Your latest attendance sessions"
-          action={
-            <button className="text-sm text-primary-600 hover:text-primary-700 font-medium">
-              View All Sessions
-            </button>
-          }
         />
         <Table
           columns={sessionColumns}
           data={[...activeSessions, ...recentSessions]}
           keyExtractor={(session) => session.id}
+          emptyMessage="No attendance sessions yet"
         />
       </Card>
 
@@ -407,7 +426,9 @@ export default function LecturerDashboardPage() {
                     <p className="text-sm text-gray-500">{course.name}</p>
                   </div>
                 </div>
-                <Badge variant="default">{course.enrolledStudents} students</Badge>
+                <Badge variant="default">
+                  {(course as any).totalStudents ?? course.enrolledStudents ?? 0} students
+                </Badge>
               </button>
             ))}
           </div>

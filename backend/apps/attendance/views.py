@@ -16,7 +16,7 @@ from .serializers import (
     AttendanceRecordCreateSerializer, BulkAttendanceSerializer,
     AttendanceSummarySerializer, StudentAttendanceSerializer
 )
-from apps.users.permissions import IsAdmin, IsLecturer, IsStudent, IsLecturerOrAdmin
+from apps.users.permissions import IsAdmin, IsLecturer, IsStudent, IsLecturerOrAdmin, IsLecturerOrAdminOrCoordinator
 from .fingerprint_utils import decode_template, find_matching_student
 from apps.users.models import AuditLog
 from apps.courses.models import Course, Enrollment
@@ -39,8 +39,36 @@ class AttendanceSessionViewSet(viewsets.ModelViewSet):
                 enrollments__student=user,
                 enrollments__is_active=True
             )
-            queryset = queryset.filter(course__in=enrolled_courses)
-        
+            # If coordinator: also see sessions for all courses in the cohort
+            from apps.courses.models import CohortGroupCoordinator
+            group = CohortGroupCoordinator.objects.filter(coordinator=user).first()
+            if group:
+                cohort_courses = Course.objects.filter(
+                    is_active=True,
+                    programme=group.cohort.programme,
+                )
+                current_year = group.cohort.current_year_of_study
+                if current_year:
+                    cohort_courses = cohort_courses.filter(year_level=current_year)
+
+                current_semester = None
+                semester_label = group.cohort.current_semester_label
+                if semester_label and ':' in semester_label:
+                    try:
+                        current_semester = int(semester_label.split(':', 1)[1])
+                    except (TypeError, ValueError):
+                        current_semester = None
+
+                if current_semester:
+                    cohort_courses = cohort_courses.filter(semester_number=current_semester)
+
+                cohort_courses = cohort_courses.distinct()
+                queryset = queryset.filter(
+                    Q(course__in=enrolled_courses) | Q(course__in=cohort_courses)
+                )
+            else:
+                queryset = queryset.filter(course__in=enrolled_courses)
+
         # Filters
         course_id = self.request.query_params.get('course')
         date = self.request.query_params.get('date')
@@ -63,8 +91,8 @@ class AttendanceSessionViewSet(viewsets.ModelViewSet):
         return AttendanceSessionListSerializer
     
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy', 'start', 'end']:
-            return [permissions.IsAuthenticated(), IsLecturerOrAdmin()]
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'start', 'end', 'mark_attendance', 'bulk_mark']:
+            return [permissions.IsAuthenticated(), IsLecturerOrAdminOrCoordinator()]
         return super().get_permissions()
     
     @action(detail=True, methods=['post'])
@@ -264,13 +292,43 @@ class StudentAttendanceView(APIView):
     
     def get(self, request):
         student = request.user
-        enrolled_courses = Course.objects.filter(
-            enrollments__student=student,
-            enrollments__is_active=True
-        )
+
+        # If student is assigned to a cohort, show courses aligned to the cohort hierarchy
+        # (programme + current year + current semester), instead of historical attendance courses.
+        if student.cohort_id:
+            courses = Course.objects.filter(
+                is_active=True,
+                programme=student.cohort.programme,
+            )
+
+            current_year = student.cohort.current_year_of_study
+            if current_year:
+                courses = courses.filter(year_level=current_year)
+
+            current_semester = None
+            semester_label = student.cohort.current_semester_label
+            if semester_label and ':' in semester_label:
+                try:
+                    current_semester = int(semester_label.split(':', 1)[1])
+                except (TypeError, ValueError):
+                    current_semester = None
+
+            if current_semester:
+                courses = courses.filter(semester_number=current_semester)
+
+            courses = courses.distinct()
+        else:
+            enrolled_courses = Course.objects.filter(
+                enrollments__student=student,
+                enrollments__is_active=True
+            )
+            recorded_courses = Course.objects.filter(
+                attendance_sessions__attendance_records__student=student
+            )
+            courses = (enrolled_courses | recorded_courses).distinct()
         
         result = []
-        for course in enrolled_courses:
+        for course in courses:
             records = AttendanceRecord.objects.filter(
                 student=student,
                 session__course=course
@@ -440,7 +498,7 @@ class TodaySessionsView(generics.ListAPIView):
 
 class FingerprintAttendanceView(APIView):
     """Verify fingerprint and mark attendance via 1:N identification."""
-    permission_classes = [permissions.IsAuthenticated, IsLecturerOrAdmin]
+    permission_classes = [permissions.IsAuthenticated, IsLecturerOrAdminOrCoordinator]
     
     def post(self, request):
         session_id = request.data.get('session_id')
@@ -543,10 +601,69 @@ class FingerprintAttendanceView(APIView):
         })
 
 
+class AdminCourseAttendanceSummaryView(APIView):
+    """Admin: per-student attendance summary for a course, filtered by year/semester/study_time."""
+    permission_classes = [permissions.IsAuthenticated, IsLecturerOrAdmin]
+
+    def get(self, request, course_id):
+        try:
+            course = Course.objects.get(id=course_id)
+        except Course.DoesNotExist:
+            return Response({"error": "Course not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        enrollments = Enrollment.objects.filter(
+            course=course, is_active=True
+        ).select_related('student')
+
+        # Optional filter by study_time
+        study_time = request.query_params.get('study_time')
+        if study_time:
+            enrollments = enrollments.filter(student__study_time=study_time)
+
+        sessions = AttendanceSession.objects.filter(course=course)
+        total_sessions = sessions.count()
+
+        students_data = []
+        for e in enrollments:
+            records = AttendanceRecord.objects.filter(session__course=course, student=e.student)
+            present = records.filter(status='present').count()
+            late = records.filter(status='late').count()
+            absent = records.filter(status='absent').count()
+            pct = round((present + late) / total_sessions * 100, 1) if total_sessions > 0 else 0
+            students_data.append({
+                'student_id': str(e.student.id),
+                'student_number': e.student.student_id,
+                'first_name': e.student.first_name,
+                'last_name': e.student.last_name,
+                'email': e.student.email,
+                'study_time': e.student.study_time,
+                'fingerprint_registered': e.student.fingerprint_registered,
+                'total_sessions': total_sessions,
+                'present': present,
+                'late': late,
+                'absent': absent,
+                'attendance_percentage': pct,
+                'is_at_risk': pct < course.attendance_threshold,
+            })
+
+        return Response({
+            'course': {
+                'id': str(course.id),
+                'code': course.code,
+                'name': course.name,
+                'year_level': course.year_level,
+                'semester_number': course.semester_number,
+                'total_sessions': total_sessions,
+                'threshold': course.attendance_threshold,
+            },
+            'students': students_data,
+        })
+
+
 class EnrolledTemplatesView(APIView):
     """Return fingerprint templates for all enrolled students in a session's course.
     Used by the Android app for device-side matching via Mantra MatchISO()."""
-    permission_classes = [permissions.IsAuthenticated, IsLecturerOrAdmin]
+    permission_classes = [permissions.IsAuthenticated, IsLecturerOrAdminOrCoordinator]
 
     def get(self, request, session_id):
         try:
@@ -555,12 +672,29 @@ class EnrolledTemplatesView(APIView):
             return Response({"error": "Session not found"}, status=status.HTTP_404_NOT_FOUND)
 
         import base64
-        students = User.objects.filter(
-            enrollments__course=session.course,
-            enrollments__is_active=True,
-            role='student',
-            fingerprint_registered=True
-        ).exclude(fingerprint_template=None)
+        from apps.courses.models import Cohort
+
+        # For coordinators: return all cohort students with fingerprints (they all attend all cohort courses)
+        # For lecturers/admins: only return students enrolled in this specific course
+        if request.user.role == 'student':
+            from apps.courses.models import CohortGroupCoordinator
+            group = CohortGroupCoordinator.objects.filter(coordinator=request.user).first()
+            if group:
+                students = User.objects.filter(
+                    cohort=group.cohort,
+                    study_time=request.user.study_time,
+                    role='student',
+                    fingerprint_registered=True
+                ).exclude(fingerprint_template=None)
+            else:
+                students = User.objects.none()
+        else:
+            students = User.objects.filter(
+                enrollments__course=session.course,
+                enrollments__is_active=True,
+                role='student',
+                fingerprint_registered=True
+            ).exclude(fingerprint_template=None)
 
         data = []
         for s in students:
@@ -577,7 +711,7 @@ class EnrolledTemplatesView(APIView):
 
 class MarkPresentView(APIView):
     """Mark a specific student present in a session (after device-side matching)."""
-    permission_classes = [permissions.IsAuthenticated, IsLecturerOrAdmin]
+    permission_classes = [permissions.IsAuthenticated, IsLecturerOrAdminOrCoordinator]
 
     def post(self, request, session_id):
         student_id = request.data.get('student_id')
@@ -636,4 +770,130 @@ class MarkPresentView(APIView):
             "student_number": student.student_id,
             "status": record.status,
             "message": f"{student.full_name} marked as present"
+        })
+
+
+class CourseAttendanceRegisterView(APIView):
+    """
+    Returns the full attendance register for a course:
+    - All sessions ordered by date
+    - All enrolled students
+    - Per-student status for each session
+    Filters: ?academic_period=<id>  ?study_time=<val>
+    """
+    permission_classes = [permissions.IsAuthenticated, IsLecturerOrAdminOrCoordinator]
+
+    def get(self, request, course_id):
+        try:
+            course = Course.objects.get(id=course_id)
+        except Course.DoesNotExist:
+            return Response({"error": "Course not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        sessions_qs = AttendanceSession.objects.filter(course=course).order_by('date', 'start_time')
+
+        academic_period = request.query_params.get('academic_period')
+        if academic_period:
+            sessions_qs = sessions_qs.filter(course__academic_period=academic_period)
+
+        study_time = request.query_params.get('study_time')
+        enrollments = Enrollment.objects.filter(course=course, is_active=True).select_related('student')
+        if study_time:
+            enrollments = enrollments.filter(student__study_time=study_time)
+
+        sessions = list(sessions_qs)
+        session_ids = [s.id for s in sessions]
+
+        # Fetch all records for these sessions in one query
+        records = AttendanceRecord.objects.filter(
+            session_id__in=session_ids
+        ).select_related('student')
+
+        # Build lookup: {student_id: {session_id: record}}
+        record_map = {}
+        for rec in records:
+            sid = str(rec.student_id)
+            ssid = str(rec.session_id)
+            if sid not in record_map:
+                record_map[sid] = {}
+            record_map[sid][ssid] = {
+                'status': rec.status,
+                'marked_at': rec.marked_at.isoformat() if rec.marked_at else None,
+                'verification_method': rec.verification_method,
+            }
+
+        sessions_data = []
+        for s in sessions:
+            sessions_data.append({
+                'id': str(s.id),
+                'date': s.date.isoformat(),
+                'start_time': str(s.start_time),
+                'end_time': str(s.end_time) if s.end_time else None,
+                'title': s.title or '',
+                'session_type': s.session_type,
+                'is_active': s.is_active,
+                'room': s.room or '',
+                'present_count': s.present_count,
+                'late_count': s.late_count,
+                'absent_count': s.absent_count,
+                'total_enrolled': s.total_enrolled,
+                'attendance_rate': s.attendance_rate,
+            })
+
+        # Collect enrolled student IDs, then add any students who have records but aren't enrolled
+        enrolled_student_ids = {str(e.student_id) for e in enrollments}
+        recorded_student_ids = set(record_map.keys())
+        extra_student_ids = recorded_student_ids - enrolled_student_ids
+
+        extra_students = []
+        if extra_student_ids:
+            from apps.users.models import User as UserModel
+            extra_students = list(UserModel.objects.filter(id__in=extra_student_ids))
+
+        all_students = [(e.student, True) for e in enrollments] + [(s, False) for s in extra_students]
+
+        students_data = []
+        total_sessions = len(sessions)
+        for student, is_enrolled in all_students:
+            student_str = str(student.id)
+            session_records = record_map.get(student_str, {})
+
+            present = sum(1 for r in session_records.values() if r['status'] == 'present')
+            late = sum(1 for r in session_records.values() if r['status'] == 'late')
+            absent = sum(1 for r in session_records.values() if r['status'] == 'absent')
+            excused = sum(1 for r in session_records.values() if r['status'] == 'excused')
+            attended = present + late
+            pct = round(attended / total_sessions * 100, 1) if total_sessions > 0 else 0
+
+            students_data.append({
+                'student_id': student_str,
+                'student_number': student.student_id,
+                'first_name': student.first_name,
+                'last_name': student.last_name,
+                'email': student.email,
+                'study_time': student.study_time,
+                'fingerprint_registered': student.fingerprint_registered,
+                'total_present': present,
+                'total_late': late,
+                'total_absent': absent,
+                'total_excused': excused,
+                'attendance_percentage': pct,
+                'is_at_risk': pct < course.attendance_threshold,
+                'session_records': {
+                    ssid: session_records.get(ssid, {'status': 'absent', 'marked_at': None, 'verification_method': None})
+                    for ssid in [str(s.id) for s in sessions]
+                },
+            })
+
+        return Response({
+            'course': {
+                'id': str(course.id),
+                'code': course.code,
+                'name': course.name,
+                'year_level': course.year_level,
+                'semester_number': course.semester_number,
+                'total_sessions': total_sessions,
+                'threshold': course.attendance_threshold,
+            },
+            'sessions': sessions_data,
+            'students': students_data,
         })

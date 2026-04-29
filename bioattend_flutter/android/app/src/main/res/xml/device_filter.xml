@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mantra MFS100 - operational mode (VID=0x04B4=1204, PID=0x1005=4101) -->
+    <usb-device vendor-id="1204" product-id="4101" />
+    <!-- Mantra MFS100 - firmware mode (VID=0x04B4=1204, PID=0x8613=34323) -->
+    <usb-device vendor-id="1204" product-id="34323" />
+    <!-- Alternate VID (0x2C0F=11279) -->
+    <usb-device vendor-id="11279" product-id="4101" />
+    <usb-device vendor-id="11279" product-id="34323" />
+</resources>

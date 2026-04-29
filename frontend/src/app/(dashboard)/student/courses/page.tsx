@@ -23,6 +23,17 @@ import { StudentAttendanceSummary } from "@/types";
 import { Search, Filter, BookOpen } from "lucide-react";
 import { getAttendanceBgClass } from "@/lib/utils";
 
+interface StudentAttendanceApi {
+  courseId: string;
+  courseCode: string;
+  courseName: string;
+  totalSessions: number;
+  attended: number;
+  absent: number;
+  late: number;
+  attendancePercentage: number;
+}
+
 export default function StudentCoursesPage() {
   const { user } = useAuth();
   const [courses, setCourses] = useState<StudentAttendanceSummary[]>([]);
@@ -37,20 +48,27 @@ export default function StudentCoursesPage() {
 
       try {
         setIsLoading(true);
-        const response = await apiClient.get<StudentAttendanceSummary[]>(
-          API_ENDPOINTS.students.courses(user.id)
+        setError(null);
+        const response = await apiClient.get<{ results?: StudentAttendanceApi[] } | StudentAttendanceApi[]>(
+          API_ENDPOINTS.attendance.myStudent
         );
-        setCourses(response.data);
+        const data = Array.isArray(response.data) ? response.data : response.data.results ?? [];
+        const mapped = data.map((course) => ({
+          courseId: course.courseId,
+          courseCode: course.courseCode,
+          courseName: course.courseName,
+          totalSessions: course.totalSessions,
+          attended: course.attended,
+          absent: course.absent,
+          late: course.late,
+          excused: course.excused ?? 0,
+          attendancePercentage: course.attendancePercentage,
+        }));
+        setCourses(mapped);
       } catch (err) {
-        // Use demo data on error
-        setCourses([
-          { courseId: 1, courseCode: "CS301", courseName: "Database Systems", totalSessions: 24, attended: 22, absent: 2, late: 0, excused: 0, attendancePercentage: 91.7 },
-          { courseId: 2, courseCode: "CS302", courseName: "Software Engineering", totalSessions: 24, attended: 20, absent: 3, late: 1, excused: 0, attendancePercentage: 83.3 },
-          { courseId: 3, courseCode: "CS303", courseName: "Computer Networks", totalSessions: 24, attended: 16, absent: 6, late: 2, excused: 0, attendancePercentage: 66.7 },
-          { courseId: 4, courseCode: "CS304", courseName: "Artificial Intelligence", totalSessions: 24, attended: 21, absent: 2, late: 1, excused: 0, attendancePercentage: 87.5 },
-          { courseId: 5, courseCode: "CS305", courseName: "Operating Systems", totalSessions: 24, attended: 23, absent: 1, late: 0, excused: 0, attendancePercentage: 95.8 },
-          { courseId: 6, courseCode: "CS306", courseName: "Web Development", totalSessions: 24, attended: 17, absent: 5, late: 2, excused: 0, attendancePercentage: 70.8 },
-        ]);
+        console.error("Courses fetch error:", err);
+        setError("Failed to load courses. Please try again.");
+        setCourses([]);
       } finally {
         setIsLoading(false);
       }

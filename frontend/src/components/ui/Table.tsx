@@ -84,30 +84,45 @@ export function Table<T>({
               </td>
             </tr>
           ) : (
-            data.map((item, rowIndex) => (
-              <tr
-                key={keyExtractor(item)}
-                onClick={() => onRowClick?.(item)}
-                className={cn(
-                  "bg-white dark:bg-gray-900 transition-colors",
-                  onRowClick && "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
-                )}
-              >
-                {columns.map((column) => (
-                  <td
-                    key={`${keyExtractor(item)}-${String(column.key)}`}
+            (() => {
+              const keyUsage = new Map<string, number>();
+              return data.map((item, rowIndex) => {
+                const extractedKey = keyExtractor(item);
+                const baseKey =
+                  extractedKey === undefined || extractedKey === null || String(extractedKey).trim() === ""
+                    ? `row-${rowIndex}`
+                    : String(extractedKey);
+
+                const occurrence = keyUsage.get(baseKey) ?? 0;
+                keyUsage.set(baseKey, occurrence + 1);
+                const rowKey = occurrence === 0 ? baseKey : `${baseKey}-${rowIndex}`;
+
+                return (
+                  <tr
+                    key={rowKey}
+                    onClick={() => onRowClick?.(item)}
                     className={cn(
-                      "px-4 py-4 text-sm text-gray-900 dark:text-gray-100",
-                      alignmentClasses[column.align || "left"]
+                      "bg-white dark:bg-gray-900 transition-colors",
+                      onRowClick && "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
                     )}
                   >
-                    {column.render
-                      ? column.render(item, rowIndex)
-                      : String((item as Record<string, unknown>)[column.key as string] ?? "")}
-                  </td>
-                ))}
-              </tr>
-            ))
+                    {columns.map((column) => (
+                      <td
+                        key={`${rowKey}-${String(column.key)}`}
+                        className={cn(
+                          "px-4 py-4 text-sm text-gray-900 dark:text-gray-100",
+                          alignmentClasses[column.align || "left"]
+                        )}
+                      >
+                        {column.render
+                          ? column.render(item, rowIndex)
+                          : String((item as Record<string, unknown>)[column.key as string] ?? "")}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              });
+            })()
           )}
         </tbody>
       </table>

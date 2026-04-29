@@ -60,11 +60,25 @@ class User(AbstractUser):
     fingerprint_registered = models.BooleanField(default=False)
     fingerprint_registered_at = models.DateTimeField(blank=True, null=True)
     
+    STUDY_TIME_CHOICES = [
+        ('day', 'Day'),
+        ('evening', 'Evening'),
+        ('weekend', 'Weekend'),
+    ]
+
     # Student-specific fields
     student_id = models.CharField(max_length=50, blank=True, null=True, unique=True)
     department = models.CharField(max_length=100, blank=True, null=True)
     program = models.CharField(max_length=100, blank=True, null=True)
     year_of_study = models.IntegerField(blank=True, null=True)
+    study_time = models.CharField(max_length=10, choices=STUDY_TIME_CHOICES, blank=True, null=True)
+    academic_year = models.ForeignKey(
+        'courses.AcademicYear',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='students'
+    )
     cohort = models.ForeignKey(
         'courses.Cohort',
         on_delete=models.SET_NULL,

@@ -9,13 +9,14 @@ import {
   Table,
   TableColumn,
   PageLoading,
+  ErrorState,
   Input,
 } from "@/components/ui";
 import { apiClient, API_ENDPOINTS } from "@/lib/api";
 import { Search, Calendar, Fingerprint, UserCheck, Clock } from "lucide-react";
 
 interface AttendanceHistoryRecord {
-  id: number;
+  id: string;
   date: string;
   courseCode: string;
   courseName: string;
@@ -24,18 +25,16 @@ interface AttendanceHistoryRecord {
   verificationMethod: "fingerprint" | "manual";
 }
 
-const DEMO_HISTORY: AttendanceHistoryRecord[] = [
-  { id: 1, date: "2026-02-21", courseCode: "CS301", courseName: "Database Systems", status: "present", checkInTime: "09:02", verificationMethod: "fingerprint" },
-  { id: 2, date: "2026-02-21", courseCode: "CS302", courseName: "Software Engineering", status: "late", checkInTime: "11:15", verificationMethod: "fingerprint" },
-  { id: 3, date: "2026-02-20", courseCode: "CS303", courseName: "Computer Networks", status: "absent", verificationMethod: "manual" },
-  { id: 4, date: "2026-02-20", courseCode: "CS304", courseName: "Artificial Intelligence", status: "present", checkInTime: "14:00", verificationMethod: "fingerprint" },
-  { id: 5, date: "2026-02-19", courseCode: "CS301", courseName: "Database Systems", status: "present", checkInTime: "09:01", verificationMethod: "fingerprint" },
-  { id: 6, date: "2026-02-19", courseCode: "CS305", courseName: "Operating Systems", status: "present", checkInTime: "08:00", verificationMethod: "fingerprint" },
-  { id: 7, date: "2026-02-18", courseCode: "CS302", courseName: "Software Engineering", status: "present", checkInTime: "11:02", verificationMethod: "fingerprint" },
-  { id: 8, date: "2026-02-18", courseCode: "CS303", courseName: "Computer Networks", status: "absent", verificationMethod: "manual" },
-  { id: 9, date: "2026-02-17", courseCode: "CS304", courseName: "Artificial Intelligence", status: "present", checkInTime: "14:03", verificationMethod: "fingerprint" },
-  { id: 10, date: "2026-02-17", courseCode: "CS306", courseName: "Web Development", status: "late", checkInTime: "16:20", verificationMethod: "manual" },
-];
+interface AttendanceRecordApi {
+  id: string;
+  status: "present" | "absent" | "late" | "excused";
+  verificationMethod?: "fingerprint" | "manual" | "qr_code" | "facial" | null;
+  markedAt?: string | null;
+  createdAt?: string;
+  sessionDate?: string;
+  courseCode?: string;
+  courseName?: string;
+}
 
 const STATUS_VARIANT: Record<string, "success" | "danger" | "warning" | "default"> = {
   present: "success",
@@ -48,6 +47,7 @@ export default function StudentAttendancePage() {
   const { user } = useAuth();
   const [records, setRecords] = useState<AttendanceHistoryRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "present" | "absent" | "late">("all");
 
@@ -55,12 +55,33 @@ export default function StudentAttendancePage() {
     const fetchHistory = async () => {
       if (!user) return;
       try {
-        const response = await apiClient.get<AttendanceHistoryRecord[]>(
-          API_ENDPOINTS.students.attendance(user.id)
+        setIsLoading(true);
+        setError(null);
+        const response = await apiClient.get<{ results?: AttendanceRecordApi[] } | AttendanceRecordApi[]>(
+          API_ENDPOINTS.attendance.recordsList
         );
-        setRecords(response.data);
-      } catch {
-        setRecords(DEMO_HISTORY);
+        const data = Array.isArray(response.data) ? response.data : response.data.results ?? [];
+        const mapped = data.map((record) => ({
+          id: record.id,
+          date: record.sessionDate || record.createdAt || "",
+          courseCode: record.courseCode || "—",
+          courseName: record.courseName || "—",
+          status: record.status,
+          checkInTime: record.markedAt
+            ? new Date(record.markedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+            : undefined,
+          verificationMethod: (record.verificationMethod === "fingerprint" ? "fingerprint" : "manual"),
+        }));
+        mapped.sort((a, b) => {
+          const timeB = new Date(b.date).getTime() || 0;
+          const timeA = new Date(a.date).getTime() || 0;
+          return timeB - timeA;
+        });
+        setRecords(mapped);
+      } catch (err) {
+        console.error("Attendance history fetch error:", err);
+        setError("Failed to load attendance history. Please try again.");
+        setRecords([]);
       } finally {
         setIsLoading(false);
       }
@@ -76,8 +97,11 @@ export default function StudentAttendancePage() {
     return matchesSearch && matchesFilter;
   });
 
-  const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString("en-GB", { dateStyle: "medium" });
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return "—";
+    return date.toLocaleDateString("en-GB", { dateStyle: "medium" });
+  };
 
   const columns: TableColumn<AttendanceHistoryRecord>[] = [
     {
@@ -150,6 +174,10 @@ export default function StudentAttendancePage() {
   ];
 
   if (isLoading) return <PageLoading message="Loading attendance history..." />;
+
+  if (error) {
+    return <ErrorState message={error} onRetry={() => window.location.reload()} />;
+  }
 
   const presentCount = records.filter((r) => r.status === "present").length;
   const absentCount = records.filter((r) => r.status === "absent").length;

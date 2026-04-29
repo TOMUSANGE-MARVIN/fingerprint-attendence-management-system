@@ -54,14 +54,15 @@ class UserSerializer(serializers.ModelSerializer):
 
     full_name = serializers.ReadOnlyField()
     cohort_name = serializers.CharField(source='cohort.name', read_only=True, default=None)
+    academic_year_label = serializers.CharField(source='academic_year.label', read_only=True, default=None)
 
     class Meta:
         model = User
         fields = [
             'id', 'email', 'first_name', 'last_name', 'full_name', 'role',
             'phone', 'avatar', 'student_id', 'staff_id', 'department',
-            'program', 'year_of_study', 'cohort', 'cohort_name',
-            'faculty', 'specialization',
+            'program', 'year_of_study', 'study_time', 'academic_year', 'academic_year_label',
+            'cohort', 'cohort_name', 'faculty', 'specialization',
             'fingerprint_registered', 'is_active', 'created_at', 'last_login'
         ]
         read_only_fields = ['id', 'created_at', 'last_login', 'fingerprint_registered']
@@ -78,7 +79,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
         fields = [
             'email', 'password', 'password_confirm', 'first_name', 'last_name',
             'role', 'phone', 'student_id', 'staff_id', 'department', 'program',
-            'year_of_study', 'cohort', 'faculty', 'specialization'
+            'year_of_study', 'study_time', 'academic_year', 'cohort', 'faculty', 'specialization'
         ]
     
     def validate(self, attrs):
@@ -99,7 +100,8 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'first_name', 'last_name', 'phone', 'avatar', 'department',
-            'program', 'year_of_study', 'faculty', 'specialization'
+            'program', 'year_of_study', 'study_time', 'academic_year',
+            'faculty', 'specialization'
         ]
 
 
@@ -122,6 +124,7 @@ class StudentSerializer(serializers.ModelSerializer):
     full_name = serializers.ReadOnlyField()
     attendance_percentage = serializers.SerializerMethodField()
     cohort_name = serializers.CharField(source='cohort.name', read_only=True, default=None)
+    academic_year_label = serializers.CharField(source='academic_year.label', read_only=True, default=None)
     current_year_of_study = serializers.IntegerField(source='cohort.current_year_of_study', read_only=True, default=None)
     current_semester_label = serializers.CharField(source='cohort.current_semester_label', read_only=True, default=None)
 
@@ -129,7 +132,8 @@ class StudentSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'email', 'first_name', 'last_name', 'full_name', 'student_id',
-            'phone', 'avatar', 'department', 'program', 'year_of_study',
+            'phone', 'avatar', 'department', 'program', 'year_of_study', 'study_time',
+            'academic_year', 'academic_year_label',
             'cohort', 'cohort_name', 'current_year_of_study', 'current_semester_label',
             'fingerprint_registered', 'is_active', 'attendance_percentage', 'created_at'
         ]

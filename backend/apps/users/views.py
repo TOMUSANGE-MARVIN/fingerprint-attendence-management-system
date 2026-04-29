@@ -14,7 +14,7 @@ from .serializers import (
     LecturerSerializer, AuditLogSerializer, NotificationSerializer
 )
 from .models import AuditLog, Notification
-from .permissions import IsAdmin, IsLecturer, IsStudent, IsLecturerOrAdmin
+from .permissions import IsAdmin, IsLecturer, IsStudent, IsLecturerOrAdmin, IsLecturerOrAdminOrCoordinator
 
 User = get_user_model()
 
@@ -125,9 +125,13 @@ class PasswordChangeView(APIView):
 
 
 class UserViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing users (Admin only)."""
-    permission_classes = [permissions.IsAuthenticated, IsAdmin]
+    """ViewSet for managing users (Admin only for writes, lecturers can read)."""
     queryset = User.objects.all()
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [permissions.IsAuthenticated()]
+        return [permissions.IsAuthenticated(), IsAdmin()]
     
     def get_serializer_class(self):
         if self.action == 'create':
@@ -135,11 +139,66 @@ class UserViewSet(viewsets.ModelViewSet):
         return UserSerializer
     
     def get_queryset(self):
+        from apps.courses.models import Cohort as CohortModel
         queryset = User.objects.all()
-        role = self.request.query_params.get('role', None)
+        role        = self.request.query_params.get('role', None)
+        faculty     = self.request.query_params.get('faculty', None)
+        programme   = self.request.query_params.get('programme', None)
+        year_level  = self.request.query_params.get('year_level', None)
+        semester_number = self.request.query_params.get('semester_number', None)
+        academic_year = self.request.query_params.get('academic_year', None)
+        course      = self.request.query_params.get('course', None)
+        cohort      = self.request.query_params.get('cohort', None)
+        study_time  = self.request.query_params.get('study_time', None)
+
         if role:
             queryset = queryset.filter(role=role)
-        return queryset
+        if cohort:
+            queryset = queryset.filter(cohort=cohort)
+        if course:
+            # Primary: use enrollment records
+            enrolled = queryset.filter(enrollments__course=course, enrollments__is_active=True)
+            if enrolled.exists():
+                queryset = enrolled
+            else:
+                # Fallback: match by programme + year_level via cohort
+                from apps.courses.models import Course as CourseModel
+                try:
+                    c = CourseModel.objects.get(pk=course)
+                    if c.programme_id:
+                        cohort_qs = CohortModel.objects.filter(programme=c.programme_id)
+                        if c.year_level:
+                            matching_ids = [
+                                ch.id for ch in cohort_qs
+                                if ch.current_year_of_study == c.year_level
+                            ]
+                            queryset = queryset.filter(cohort__in=matching_ids)
+                        else:
+                            queryset = queryset.filter(cohort__in=cohort_qs)
+                except CourseModel.DoesNotExist:
+                    pass
+        elif programme:
+            cohort_qs = CohortModel.objects.filter(programme=programme)
+            if year_level:
+                matching = [c for c in cohort_qs if c.current_year_of_study == int(year_level)]
+                matching_ids = [c.id for c in matching]
+                if semester_number:
+                    sem = str(semester_number)
+                    matching_ids = [
+                        c.id for c in matching
+                        if c.current_semester_label and c.current_semester_label.endswith(f":{sem}")
+                    ]
+                queryset = queryset.filter(cohort__in=matching_ids)
+            else:
+                queryset = queryset.filter(cohort__in=cohort_qs)
+        elif faculty:
+            queryset = queryset.filter(cohort__programme__faculty=faculty)
+
+        if study_time:
+            queryset = queryset.filter(study_time=study_time)
+        if academic_year:
+            queryset = queryset.filter(academic_year=academic_year)
+        return queryset.distinct()
     
     def perform_create(self, serializer):
         user = serializer.save()
@@ -194,9 +253,13 @@ class LecturerListView(generics.ListAPIView):
     """List all lecturers."""
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = LecturerSerializer
-    
+
     def get_queryset(self):
-        return User.objects.filter(role='lecturer', is_active=True)
+        qs = User.objects.filter(role='lecturer', is_active=True)
+        faculty = self.request.query_params.get('faculty')
+        if faculty:
+            qs = qs.filter(taught_courses__faculty=faculty).distinct()
+        return qs
 
 
 class LecturerDetailView(generics.RetrieveAPIView):
@@ -306,17 +369,17 @@ class NotificationCountView(APIView):
 
 class FingerprintRegistrationView(APIView):
     """Register or update a student's fingerprint template."""
-    permission_classes = [permissions.IsAuthenticated, IsLecturerOrAdmin]
-    
+    permission_classes = [permissions.IsAuthenticated, IsLecturerOrAdminOrCoordinator]
+
     def post(self, request, student_id):
         fingerprint_template = request.data.get('fingerprint_template')
-        
+
         if not fingerprint_template:
             return Response(
                 {"error": "fingerprint_template is required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         try:
             student = User.objects.get(id=student_id, role='student')
         except User.DoesNotExist:
@@ -324,6 +387,16 @@ class FingerprintRegistrationView(APIView):
                 {"error": "Student not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
+
+        # If requester is a student coordinator, verify the target student is in their group
+        if request.user.role == 'student':
+            from apps.courses.models import CohortGroupCoordinator
+            group = CohortGroupCoordinator.objects.filter(coordinator=request.user).first()
+            if group is None or str(student.cohort_id) != str(group.cohort_id) or student.study_time != request.user.study_time:
+                return Response(
+                    {"error": "You can only register fingerprints for students in your class"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
         
         import base64
         try:
@@ -366,6 +439,43 @@ class FingerprintRegistrationView(APIView):
         if x_forwarded_for:
             return x_forwarded_for.split(',')[0]
         return request.META.get('REMOTE_ADDR')
+
+
+class CohortFingerprintTemplatesView(APIView):
+    """Return all enrolled fingerprint templates for the coordinator's cohort group.
+    Used by the mobile app to check for duplicate fingerprints before enrolling."""
+    permission_classes = [permissions.IsAuthenticated, IsLecturerOrAdminOrCoordinator]
+
+    def get(self, request):
+        import base64
+        from apps.courses.models import CohortGroupCoordinator
+
+        if request.user.role == 'student':
+            group = CohortGroupCoordinator.objects.filter(coordinator=request.user).first()
+            if not group:
+                return Response({'students': []})
+            students = User.objects.filter(
+                cohort=group.cohort,
+                study_time=request.user.study_time,
+                role='student',
+                fingerprint_registered=True,
+            ).exclude(fingerprint_template=None)
+        else:
+            # Lecturer / admin: all enrolled students (they can pass cohort param)
+            cohort_id = request.query_params.get('cohort')
+            qs = User.objects.filter(role='student', fingerprint_registered=True).exclude(fingerprint_template=None)
+            if cohort_id:
+                qs = qs.filter(cohort_id=cohort_id)
+            students = qs
+
+        data = []
+        for s in students:
+            try:
+                tmpl = base64.b64encode(s.fingerprint_template).decode('utf-8')
+                data.append({'id': str(s.id), 'name': s.full_name, 'template': tmpl})
+            except Exception:
+                pass
+        return Response({'students': data})
 
 
 class FingerprintStatusView(APIView):

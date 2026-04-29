@@ -80,7 +80,7 @@ function createApiClient(): AxiosInstance {
         try {
           const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
           if (refreshToken) {
-            const response = await axios.post(`${API_BASE_URL}/auth/token/refresh/`, {
+            const response = await axios.post(`${API_BASE_URL}${API_ENDPOINTS.auth.refreshToken}`, {
               refresh: refreshToken,
             });
 
@@ -185,7 +185,7 @@ export const API_ENDPOINTS = {
   auth: {
     login: "/auth/login/",
     logout: "/auth/logout/",
-    refreshToken: "/auth/token/refresh/",
+    refreshToken: "/auth/refresh/",
     me: "/auth/me/",
     changePassword: "/auth/change-password/",
     notifications: "/auth/notifications/",
@@ -213,10 +213,12 @@ export const API_ENDPOINTS = {
   // Courses
   courses: {
     list: "/courses/",
-    detail: (id: number) => `/courses/${id}/`,
-    students: (id: number) => `/courses/${id}/students/`,
-    attendance: (id: number) => `/courses/${id}/attendance/`,
-    timetable: (id: number) => `/courses/${id}/timetable/`,
+    detail: (id: number | string) => `/courses/${id}/`,
+    students: (id: number | string) => `/courses/${id}/students/`,
+    attendance: (id: number | string) => `/courses/${id}/attendance/`,
+    timetable: (id: number | string) => `/courses/${id}/timetable/`,
+    myCoordinated: "/courses/my-coordinated/",
+    setCoordinator: (courseId: string) => `/courses/${courseId}/set_coordinator/`,
   },
 
   // Attendance
@@ -226,8 +228,11 @@ export const API_ENDPOINTS = {
     startSession: "/attendance/sessions/start/",
     endSession: (id: number) => `/attendance/sessions/${id}/end/`,
     records: (sessionId: number) => `/attendance/sessions/${sessionId}/records/`,
+    recordsList: "/attendance/records/",
     markAttendance: "/attendance/mark/",
     fingerprintVerify: "/attendance/fingerprint/verify/",
+    adminCourseSummary: (courseId: string | number) => `/attendance/admin/course/${courseId}/`,
+    myStudent: "/attendance/my/student/",
   },
 
   // Fingerprint
@@ -275,6 +280,7 @@ export const API_ENDPOINTS = {
   cohorts: {
     list: "/courses/cohorts/",
     detail: (id: string) => `/courses/cohorts/${id}/`,
+    setStudentCoordinator: (id: string) => `/courses/cohorts/${id}/set_student_coordinator/`,
   },
 
   // Admin
