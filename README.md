@@ -22,6 +22,11 @@ This system provides a comprehensive solution for managing student attendance in
 - **HTTP Client:** Axios
 - **Icons:** Lucide React
 
+### Mobile App
+- **Framework:** Flutter
+- **Language:** Dart
+- **Platform:** Android (biometric attendance capture flow)
+
 ### Backend
 - **Framework:** Django 4.2 with REST Framework
 - **Database:** MySQL
@@ -58,6 +63,15 @@ final-year-project/
 │   ├── manage.py
 │   └── requirements.txt
 │
+├── bioattend_flutter/       # Flutter mobile app
+│   ├── lib/
+│   │   ├── screens/        # App screens
+│   │   ├── services/       # API + local service integrations
+│   │   ├── models/         # Data models
+│   │   └── widgets/        # Reusable Flutter widgets
+│   ├── android/
+│   └── pubspec.yaml
+│
 └── README.md
 ```
 
@@ -68,6 +82,7 @@ final-year-project/
 - Node.js 18+ 
 - Python 3.10+
 - MySQL 8.0+
+- Flutter SDK 3.x
 
 ### Backend Setup
 
@@ -114,11 +129,26 @@ npm install
 npm run dev
 ```
 
+### Mobile App Setup (Flutter)
+
+```bash
+cd bioattend_flutter
+
+# Install dependencies
+flutter pub get
+
+# Run app on connected device/emulator
+flutter run
+```
+
+Update API base URL in `lib/services/api_service.dart` as needed for your network/device.
+
 ### Access the Application
 
 - **Frontend:** http://localhost:3000
 - **Backend API:** http://localhost:8000/api/
 - **Django Admin:** http://localhost:8000/admin/
+- **Flutter App:** run from `bioattend_flutter/` on emulator/physical device
 
 ### Test Credentials (after running seed_data)
 
