@@ -29,7 +29,7 @@ import { formatDate, cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AttendanceStatus = "present" | "absent" | "excused";
+type AttendanceStatus = "present" | "absent";
 
 interface CoordinatorStudent {
   id: string;
@@ -281,7 +281,6 @@ export default function CoordinatorAttendancePage() {
     const map: Record<AttendanceStatus, { variant: "success" | "danger" | "default"; label: string }> = {
       present: { variant: "success", label: "Present" },
       absent: { variant: "danger", label: "Absent" },
-      excused: { variant: "default", label: "Excused" },
     };
     const { variant, label } = map[status] ?? { variant: "default", label: status };
     return <Badge variant={variant}>{label}</Badge>;
@@ -496,7 +495,6 @@ export default function CoordinatorAttendancePage() {
                           >
                             <option value="present">Present</option>
                             <option value="absent">Absent</option>
-                            <option value="excused">Excused</option>
                           </select>
                           <ChevronDown className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
                         </div>

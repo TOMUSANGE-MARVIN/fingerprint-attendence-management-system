@@ -32,7 +32,7 @@ interface AttendeeRecord {
   studentNumber: string;
   firstName: string;
   lastName: string;
-  status: "present" | "absent" | "excused";
+  status: "present" | "absent";
   markedAt: string | null;
   verificationMethod: string | null;
 }

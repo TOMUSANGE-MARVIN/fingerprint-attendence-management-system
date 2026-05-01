@@ -69,7 +69,7 @@ export function Badge({
 
 // Attendance Status Badge - specialized for attendance statuses
 interface AttendanceStatusBadgeProps {
-  status: "present" | "absent" | "excused";
+  status: "present" | "absent";
 }
 
 export function AttendanceStatusBadge({ status }: AttendanceStatusBadgeProps) {

@@ -24,23 +24,20 @@ interface AttendanceDistribution {
 interface AttendancePieChartProps {
   present: number;
   absent: number;
-  excused: number;
   height?: number;
 }
 
 export function AttendancePieChart({
   present,
   absent,
-  excused,
   height = 300,
 }: AttendancePieChartProps) {
   const data: AttendanceDistribution[] = [
     { name: "Present", value: present, color: "#22c55e" },
     { name: "Absent", value: absent, color: "#ef4444" },
-    { name: "Excused", value: excused, color: "#3b82f6" },
   ].filter((item) => item.value > 0);
 
-  const total = present + absent + excused;
+  const total = present + absent;
 
   // Custom tooltip
   const CustomTooltip = ({ active, payload }: {

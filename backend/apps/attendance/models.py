@@ -153,15 +153,12 @@ class AttendanceSession(models.Model):
         """Get count of present students."""
         return self.attendance_records.filter(status='present').count()
     
-    @property
-    def late_count(self):
-        """Late status is retired; kept for backward-compatible payloads."""
-        return 0
+
     
     @property
     def absent_count(self):
         """Get count of absent students."""
-        return self.total_enrolled - self.present_count
+        return self.attendance_records.filter(status='absent').count()
     
     @property
     def is_expired(self):
@@ -186,7 +183,6 @@ class AttendanceRecord(models.Model):
     STATUS_CHOICES = [
         ('present', 'Present'),
         ('absent', 'Absent'),
-        ('excused', 'Excused'),
     ]
     
     VERIFICATION_METHOD_CHOICES = [

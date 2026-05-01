@@ -42,7 +42,7 @@ const NOTIFICATION_ICONS: Record<string, React.ReactNode> = {
   system: <Bell className="w-4 h-4 text-gray-500 dark:text-gray-400" />,
 };
 
-type AttendanceStatus = "present" | "absent" | "excused";
+type AttendanceStatus = "present" | "absent";
 
 interface StudentAttendanceApi {
   courseId: string;
@@ -148,7 +148,6 @@ export default function StudentDashboardPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [excusedCount, setExcusedCount] = useState(0);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -179,7 +178,6 @@ export default function StudentDashboardPage() {
         const records = normalizeList(recordsRes.data);
         const weeklyTrends = buildTrends(records, "week").slice(-6);
         const monthlyTrends = buildTrends(records, "month").slice(-4);
-        setExcusedCount(records.filter((record) => record.status === "excused").length);
 
         const totalSessions = summaries.reduce((sum, c) => sum + c.totalSessions, 0);
         const totalAttended = summaries.reduce((sum, c) => sum + c.attended, 0);
@@ -301,7 +299,6 @@ export default function StudentDashboardPage() {
         <StatCard
           title="Absences"
           value={totalAbsent}
-          subtitle={`${excusedCount} excused`}
           icon={<AlertTriangle className="w-6 h-6" />}
           variant={totalAbsent > 5 ? "danger" : "warning"}
         />
@@ -361,7 +358,6 @@ export default function StudentDashboardPage() {
             <AttendancePieChart
               present={totalAttended}
               absent={totalAbsent}
-              excused={excusedCount}
               height={280}
             />
           </Card>

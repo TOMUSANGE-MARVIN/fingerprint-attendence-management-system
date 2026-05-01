@@ -20,14 +20,14 @@ interface AttendanceHistoryRecord {
   date: string;
   courseCode: string;
   courseName: string;
-  status: "present" | "absent" | "excused";
+  status: "present" | "absent";
   checkInTime?: string;
   verificationMethod: "fingerprint" | "manual";
 }
 
 interface AttendanceRecordApi {
   id: string;
-  status: "present" | "absent" | "excused";
+  status: "present" | "absent";
   verificationMethod?: "fingerprint" | "manual" | "qr_code" | "facial" | null;
   markedAt?: string | null;
   createdAt?: string;
@@ -48,7 +48,7 @@ export default function StudentAttendancePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState<"all" | "present" | "absent" | "excused">("all");
+  const [filterStatus, setFilterStatus] = useState<"all" | "present" | "absent">("all");
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -65,7 +65,7 @@ export default function StudentAttendancePage() {
           date: record.sessionDate || record.createdAt || "",
           courseCode: record.courseCode || "—",
           courseName: record.courseName || "—",
-          status: record.status as "present" | "absent" | "excused",
+          status: record.status as "present" | "absent",
           checkInTime: record.markedAt
             ? new Date(record.markedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
             : undefined,
@@ -222,7 +222,6 @@ export default function StudentAttendancePage() {
                 <option value="all">All</option>
                 <option value="present">Present</option>
                 <option value="absent">Absent</option>
-                <option value="excused">Excused</option>
               </select>
             </div>
           }
