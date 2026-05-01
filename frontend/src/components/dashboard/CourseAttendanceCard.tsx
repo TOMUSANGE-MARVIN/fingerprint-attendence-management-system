@@ -7,7 +7,7 @@ import React from "react";
 import { cn, getAttendanceBgClass } from "@/lib/utils";
 import { Card, Badge } from "@/components/ui";
 import { StudentAttendanceSummary } from "@/types";
-import { BookOpen, Users, Clock } from "lucide-react";
+import { BookOpen } from "lucide-react";
 
 interface CourseAttendanceCardProps {
   course: StudentAttendanceSummary;
@@ -72,7 +72,7 @@ export function CourseAttendanceCard({ course, onClick }: CourseAttendanceCardPr
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="grid grid-cols-2 gap-2 text-center">
           <div className="p-2 bg-success-50 rounded-lg">
             <p className="text-lg font-bold text-success-600">{course.attended}</p>
             <p className="text-xs text-gray-500">Present</p>
@@ -80,10 +80,6 @@ export function CourseAttendanceCard({ course, onClick }: CourseAttendanceCardPr
           <div className="p-2 bg-danger-50 rounded-lg">
             <p className="text-lg font-bold text-danger-600">{course.absent}</p>
             <p className="text-xs text-gray-500">Absent</p>
-          </div>
-          <div className="p-2 bg-warning-50 rounded-lg">
-            <p className="text-lg font-bold text-warning-600">{course.late}</p>
-            <p className="text-xs text-gray-500">Late</p>
           </div>
         </div>
 

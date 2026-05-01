@@ -8,6 +8,8 @@ from rest_framework.views import APIView
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.db.models import Count, Avg, Q
+from django.db.models import F
+from django.db.models.functions import Coalesce
 from datetime import datetime, timedelta
 from .models import AttendanceSession, AttendanceRecord, AttendanceSummary
 from .serializers import (
@@ -22,6 +24,38 @@ from apps.users.models import AuditLog
 from apps.courses.models import Course, Enrollment
 
 User = get_user_model()
+
+
+def _with_effective_schedule(queryset):
+    return queryset.annotate(
+        effective_start_time=Coalesce(F('timetable_slot__start_time'), F('start_time')),
+        effective_end_time=Coalesce(F('timetable_slot__end_time'), F('end_time')),
+    )
+
+
+def _active_window_query():
+    now_local = timezone.localtime()
+    return Q(
+        date=now_local.date(),
+        effective_start_time__lte=now_local.time(),
+        effective_end_time__gte=now_local.time(),
+    )
+
+
+def _session_window_error(session):
+    """Return a response when attendance marking is outside the timetable window."""
+    session.sync_active_state()
+    if session.is_active:
+        return None
+    if session.is_expired:
+        return Response(
+            {"error": "Session has expired — attendance is now locked"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    return Response(
+        {"error": "Session is not active right now. Attendance is only allowed during the timetable slot time."},
+        status=status.HTTP_400_BAD_REQUEST
+    )
 
 
 class AttendanceSessionViewSet(viewsets.ModelViewSet):
@@ -79,7 +113,10 @@ class AttendanceSessionViewSet(viewsets.ModelViewSet):
         if date:
             queryset = queryset.filter(date=date)
         if is_active is not None:
-            queryset = queryset.filter(is_active=is_active.lower() == 'true')
+            is_active_bool = is_active.lower() == 'true'
+            queryset = _with_effective_schedule(queryset)
+            active_window = _active_window_query()
+            queryset = queryset.filter(active_window) if is_active_bool else queryset.exclude(active_window)
         
         return queryset
     
@@ -97,16 +134,15 @@ class AttendanceSessionViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def start(self, request, pk=None):
-        """Start an attendance session."""
+        """Compatibility endpoint: sessions are timetable-controlled."""
         session = self.get_object()
-        
-        if session.is_active:
+
+        session.sync_active_state()
+        if not session.is_active:
             return Response(
-                {"error": "Session is already active"},
+                {"error": "Session is controlled by timetable time and is not active yet."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        session.start_session()
         
         # Create absent records for all enrolled students
         enrollments = Enrollment.objects.filter(course=session.course, is_active=True)
@@ -117,42 +153,22 @@ class AttendanceSessionViewSet(viewsets.ModelViewSet):
                 defaults={'status': 'absent'}
             )
         
-        # Log the action
-        AuditLog.objects.create(
-            user=request.user,
-            action='SESSION_STARTED',
-            entity_type='AttendanceSession',
-            entity_id=str(session.id),
-            description=f"Started attendance session for {session.course.code}"
-        )
-        
         serializer = AttendanceSessionDetailSerializer(session)
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
     def end(self, request, pk=None):
-        """End an attendance session."""
+        """Sessions close automatically based on timetable end time."""
         session = self.get_object()
-        
-        if not session.is_active:
-            return Response(
-                {"error": "Session is not active"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        session.end_session()
-        
-        # Log the action
-        AuditLog.objects.create(
-            user=request.user,
-            action='SESSION_ENDED',
-            entity_type='AttendanceSession',
-            entity_id=str(session.id),
-            description=f"Ended attendance session for {session.course.code}"
-        )
-        
+        session.sync_active_state()
         serializer = AttendanceSessionDetailSerializer(session)
-        return Response(serializer.data)
+        return Response(
+            {
+                "error": "Sessions are controlled by timetable time and end automatically.",
+                "session": serializer.data,
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
     
     @action(detail=True, methods=['get'])
     def records(self, request, pk=None):
@@ -166,6 +182,10 @@ class AttendanceSessionViewSet(viewsets.ModelViewSet):
     def mark_attendance(self, request, pk=None):
         """Mark attendance for a single student."""
         session = self.get_object()
+        window_error = _session_window_error(session)
+        if window_error:
+            return window_error
+
         student_id = request.data.get('student_id')
         attendance_status = request.data.get('status', 'present')
         verification_method = request.data.get('verification_method', 'manual')
@@ -216,6 +236,10 @@ class AttendanceSessionViewSet(viewsets.ModelViewSet):
     def bulk_mark(self, request, pk=None):
         """Mark attendance for multiple students at once."""
         session = self.get_object()
+        window_error = _session_window_error(session)
+        if window_error:
+            return window_error
+
         records_data = request.data.get('records', [])
         
         results = []
@@ -336,10 +360,9 @@ class StudentAttendanceView(APIView):
             
             total = records.count()
             present = records.filter(status='present').count()
-            late = records.filter(status='late').count()
             absent = records.filter(status='absent').count()
             
-            attendance_pct = round((present + late) / total * 100, 1) if total > 0 else 0
+            attendance_pct = round((present / total) * 100, 1) if total > 0 else 0
             
             recent_records = records.order_by('-session__date')[:5]
             
@@ -349,7 +372,7 @@ class StudentAttendanceView(APIView):
                 'course_name': course.name,
                 'total_sessions': total,
                 'attended': present,
-                'late': late,
+                'late': 0,
                 'absent': absent,
                 'attendance_percentage': attendance_pct,
                 'threshold': course.attendance_threshold,
@@ -384,7 +407,6 @@ class StudentCourseAttendanceView(APIView):
         
         total = records.count()
         present = records.filter(status='present').count()
-        late = records.filter(status='late').count()
         
         return Response({
             'course': {
@@ -396,9 +418,9 @@ class StudentCourseAttendanceView(APIView):
             'summary': {
                 'total_sessions': total,
                 'present': present,
-                'late': late,
-                'absent': total - present - late,
-                'attendance_percentage': round((present + late) / total * 100, 1) if total > 0 else 0
+                'late': 0,
+                'absent': total - present,
+                'attendance_percentage': round((present / total) * 100, 1) if total > 0 else 0
             },
             'records': serializer.data
         })
@@ -425,7 +447,7 @@ class LecturerCourseAttendanceView(APIView):
             total_sessions = sessions.count()
             avg_attendance = 0
             if total_sessions > 0:
-                total_present = sum(s.present_count + s.late_count for s in sessions)
+                total_present = sum(s.present_count for s in sessions)
                 total_expected = sum(s.total_enrolled for s in sessions)
                 avg_attendance = round((total_present / total_expected * 100), 1) if total_expected > 0 else 0
             
@@ -461,7 +483,7 @@ class ActiveSessionsView(generics.ListAPIView):
     
     def get_queryset(self):
         user = self.request.user
-        queryset = AttendanceSession.objects.filter(is_active=True)
+        queryset = _with_effective_schedule(AttendanceSession.objects.all()).filter(_active_window_query())
         
         if user.role == 'lecturer':
             queryset = queryset.filter(lecturer=user)
@@ -518,17 +540,9 @@ class FingerprintAttendanceView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        if not session.is_active:
-            return Response(
-                {"error": "Session is not active"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if session.is_expired:
-            return Response(
-                {"error": "Session has expired — attendance is now locked"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        window_error = _session_window_error(session)
+        if window_error:
+            return window_error
 
         # Decode the captured template
         from .fingerprint_utils import decode_template, find_matching_student
@@ -563,6 +577,17 @@ class FingerprintAttendanceView(APIView):
             student=matched_student,
             defaults={'status': 'absent'}
         )
+
+        if not created and record.status in {'present', 'excused'}:
+            return Response({
+                "matched": True,
+                "already_marked": True,
+                "student_id": str(matched_student.id),
+                "student_name": matched_student.full_name,
+                "student_number": matched_student.student_id,
+                "status": record.status,
+                "message": f"{matched_student.full_name} already captured for this session"
+            })
         
         record.mark_present(
             marked_by=request.user,
@@ -627,9 +652,8 @@ class AdminCourseAttendanceSummaryView(APIView):
         for e in enrollments:
             records = AttendanceRecord.objects.filter(session__course=course, student=e.student)
             present = records.filter(status='present').count()
-            late = records.filter(status='late').count()
             absent = records.filter(status='absent').count()
-            pct = round((present + late) / total_sessions * 100, 1) if total_sessions > 0 else 0
+            pct = round((present / total_sessions) * 100, 1) if total_sessions > 0 else 0
             students_data.append({
                 'student_id': str(e.student.id),
                 'student_number': e.student.student_id,
@@ -640,7 +664,7 @@ class AdminCourseAttendanceSummaryView(APIView):
                 'fingerprint_registered': e.student.fingerprint_registered,
                 'total_sessions': total_sessions,
                 'present': present,
-                'late': late,
+                'late': 0,
                 'absent': absent,
                 'attendance_percentage': pct,
                 'is_at_risk': pct < course.attendance_threshold,
@@ -723,11 +747,9 @@ class MarkPresentView(APIView):
         except AttendanceSession.DoesNotExist:
             return Response({"error": "Session not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        if not session.is_active:
-            return Response({"error": "Session is not active"}, status=status.HTTP_400_BAD_REQUEST)
-
-        if session.is_expired:
-            return Response({"error": "Session has expired — attendance is now locked"}, status=status.HTTP_400_BAD_REQUEST)
+        window_error = _session_window_error(session)
+        if window_error:
+            return window_error
 
         try:
             student = User.objects.get(id=student_id, role='student')
@@ -739,6 +761,18 @@ class MarkPresentView(APIView):
             student=student,
             defaults={'status': 'absent'}
         )
+
+        if record.status in {'present', 'excused'}:
+            return Response({
+                "matched": True,
+                "already_marked": True,
+                "student_id": str(student.id),
+                "student_name": student.full_name,
+                "student_number": student.student_id,
+                "status": record.status,
+                "message": f"{student.full_name} already captured for this session"
+            })
+
         record.mark_present(
             marked_by=request.user,
             verification_method='fingerprint',
@@ -765,6 +799,7 @@ class MarkPresentView(APIView):
 
         return Response({
             "matched": True,
+            "already_marked": False,
             "student_id": str(student.id),
             "student_name": student.full_name,
             "student_number": student.student_id,
@@ -833,7 +868,7 @@ class CourseAttendanceRegisterView(APIView):
                 'is_active': s.is_active,
                 'room': s.room or '',
                 'present_count': s.present_count,
-                'late_count': s.late_count,
+                'late_count': 0,
                 'absent_count': s.absent_count,
                 'total_enrolled': s.total_enrolled,
                 'attendance_rate': s.attendance_rate,
@@ -858,10 +893,9 @@ class CourseAttendanceRegisterView(APIView):
             session_records = record_map.get(student_str, {})
 
             present = sum(1 for r in session_records.values() if r['status'] == 'present')
-            late = sum(1 for r in session_records.values() if r['status'] == 'late')
             absent = sum(1 for r in session_records.values() if r['status'] == 'absent')
             excused = sum(1 for r in session_records.values() if r['status'] == 'excused')
-            attended = present + late
+            attended = present
             pct = round(attended / total_sessions * 100, 1) if total_sessions > 0 else 0
 
             students_data.append({
@@ -873,7 +907,7 @@ class CourseAttendanceRegisterView(APIView):
                 'study_time': student.study_time,
                 'fingerprint_registered': student.fingerprint_registered,
                 'total_present': present,
-                'total_late': late,
+                'total_late': 0,
                 'total_absent': absent,
                 'total_excused': excused,
                 'attendance_percentage': pct,

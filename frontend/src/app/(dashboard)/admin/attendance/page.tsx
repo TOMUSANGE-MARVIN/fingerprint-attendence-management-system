@@ -32,7 +32,7 @@ interface AttendeeRecord {
   studentNumber: string;
   firstName: string;
   lastName: string;
-  status: "present" | "late";
+  status: "present" | "absent" | "excused";
   markedAt: string | null;
   verificationMethod: string | null;
 }
@@ -47,7 +47,6 @@ interface Session {
   isActive: boolean;
   room: string | null;
   presentCount: number;
-  lateCount: number;
   totalEnrolled: number;
 }
 
@@ -89,7 +88,7 @@ function SessionRow({ session, students }: { session: Session; students: Student
   const attendees: AttendeeRecord[] = students
     .filter((s) => {
       const rec = s.sessionRecords[session.id];
-      return rec && (rec.status === "present" || rec.status === "late");
+      return rec && rec.status === "present";
     })
     .map((s) => {
       const rec = s.sessionRecords[session.id];
@@ -98,7 +97,7 @@ function SessionRow({ session, students }: { session: Session; students: Student
         studentNumber: s.studentNumber,
         firstName: s.firstName,
         lastName: s.lastName,
-        status: rec.status as "present" | "late",
+        status: "present" as const,
         markedAt: rec.markedAt,
         verificationMethod: rec.verificationMethod,
       };
@@ -108,7 +107,7 @@ function SessionRow({ session, students }: { session: Session; students: Student
       return a.studentNumber.localeCompare(b.studentNumber);
     });
 
-  const attended = session.presentCount + session.lateCount;
+  const attended = session.presentCount;
 
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
@@ -190,15 +189,9 @@ function SessionRow({ session, students }: { session: Session; students: Student
                       {a.verificationMethod ?? "—"}
                     </td>
                     <td className="px-5 py-3">
-                      {a.status === "present" ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-success-600 dark:text-green-400">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Present
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-warning-600 dark:text-yellow-400">
-                          <Clock className="w-3.5 h-3.5" /> Late
-                        </span>
-                      )}
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-success-600 dark:text-green-400">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Present
+                      </span>
                     </td>
                   </tr>
                 ))}
@@ -595,7 +588,7 @@ export default function AdminAttendancePage() {
                   {registerData.sessions.length > 0
                     ? Math.round(
                         registerData.sessions.reduce(
-                          (sum, s) => sum + (s.totalEnrolled > 0 ? ((s.presentCount + s.lateCount) / s.totalEnrolled) * 100 : 0),
+                          (sum, s) => sum + (s.totalEnrolled > 0 ? (s.presentCount / s.totalEnrolled) * 100 : 0),
                           0
                         ) / registerData.sessions.length
                       )

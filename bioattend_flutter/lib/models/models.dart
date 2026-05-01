@@ -137,6 +137,7 @@ class CoordinatorResponse {
 
 class FingerprintVerifyResponse {
   final bool success;
+  final bool alreadyMarked;
   final String message;
   final Student? student;
   final String? studentId;
@@ -146,6 +147,7 @@ class FingerprintVerifyResponse {
 
   FingerprintVerifyResponse({
     required this.success,
+    required this.alreadyMarked,
     required this.message,
     this.student,
     this.studentId,
@@ -158,11 +160,13 @@ class FingerprintVerifyResponse {
     final status = (j['status'] ?? '').toString().toLowerCase();
     final matched = j['matched'] == true;
     final explicitSuccess = j['success'] == true;
+    final alreadyMarked = j['already_marked'] == true;
     final statusSuccess = status == 'present' || status == 'late' || status == 'excused';
     final success = explicitSuccess || matched || statusSuccess;
 
     return FingerprintVerifyResponse(
       success: success,
+      alreadyMarked: alreadyMarked,
       message: (j['message'] ?? '').toString(),
       student: j['student'] != null ? Student.fromJson(j['student']) : null,
       studentId: j['student_id']?.toString(),

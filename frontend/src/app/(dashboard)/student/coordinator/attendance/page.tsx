@@ -29,7 +29,7 @@ import { formatDate, cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AttendanceStatus = "present" | "absent" | "late" | "excused";
+type AttendanceStatus = "present" | "absent" | "excused";
 
 interface CoordinatorStudent {
   id: string;
@@ -67,7 +67,7 @@ interface AttendanceSessionItem {
   room: string | null;
   totalEnrolled: number;
   presentCount: number;
-  lateCount: number;
+  lateCount?: number;
   absentCount: number;
   attendanceRate: number;
   createdAt: string;
@@ -278,9 +278,8 @@ export default function CoordinatorAttendancePage() {
     return <ErrorState message={dataError} onRetry={fetchData} />;
 
   const statusBadge = (status: AttendanceStatus) => {
-    const map: Record<AttendanceStatus, { variant: "success" | "warning" | "danger" | "default"; label: string }> = {
+    const map: Record<AttendanceStatus, { variant: "success" | "danger" | "default"; label: string }> = {
       present: { variant: "success", label: "Present" },
-      late: { variant: "warning", label: "Late" },
       absent: { variant: "danger", label: "Absent" },
       excused: { variant: "default", label: "Excused" },
     };
@@ -444,14 +443,10 @@ export default function CoordinatorAttendancePage() {
                     )
                   }
                 />
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div className="text-center p-3 bg-success-50 dark:bg-green-900/20 rounded-xl">
                     <p className="text-2xl font-bold text-success-600">{selectedSession.presentCount}</p>
                     <p className="text-xs text-gray-500 mt-1">Present</p>
-                  </div>
-                  <div className="text-center p-3 bg-warning-50 dark:bg-yellow-900/20 rounded-xl">
-                    <p className="text-2xl font-bold text-warning-600">{selectedSession.lateCount}</p>
-                    <p className="text-xs text-gray-500 mt-1">Late</p>
                   </div>
                   <div className="text-center p-3 bg-danger-50 dark:bg-red-900/20 rounded-xl">
                     <p className="text-2xl font-bold text-danger-600">{selectedSession.absentCount}</p>
@@ -501,7 +496,6 @@ export default function CoordinatorAttendancePage() {
                           >
                             <option value="present">Present</option>
                             <option value="absent">Absent</option>
-                            <option value="late">Late</option>
                             <option value="excused">Excused</option>
                           </select>
                           <ChevronDown className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />

@@ -4,6 +4,7 @@ Attendance models for the attendance management system.
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
+from datetime import datetime
 import uuid
 
 
@@ -74,6 +75,61 @@ class AttendanceSession(models.Model):
     
     def __str__(self):
         return f"{self.course.code} - {self.date} {self.start_time}"
+
+    def _scheduled_bounds(self):
+        """Return timezone-aware start/end datetimes derived from timetable/session times."""
+        start = self.timetable_slot.start_time if self.timetable_slot else self.start_time
+        end = self.timetable_slot.end_time if self.timetable_slot else self.end_time
+        if not (self.date and start and end):
+            return None, None
+        tz = timezone.get_current_timezone()
+        start_dt = timezone.make_aware(datetime.combine(self.date, start), tz)
+        end_dt = timezone.make_aware(datetime.combine(self.date, end), tz)
+        return start_dt, end_dt
+
+    @property
+    def is_within_window(self):
+        """True when now is inside the timetable/session time window."""
+        start_dt, end_dt = self._scheduled_bounds()
+        if not start_dt or not end_dt:
+            return False
+        now = timezone.now()
+        return start_dt <= now <= end_dt
+
+    def sync_active_state(self, now=None, save=True):
+        """
+        Keep is_active aligned with the timetable window.
+        This removes reliance on manual start/end toggling.
+        """
+        start_dt, end_dt = self._scheduled_bounds()
+        if not start_dt or not end_dt:
+            return self.is_active
+
+        now = now or timezone.now()
+        should_be_active = start_dt <= now <= end_dt
+        changed_fields = []
+
+        if should_be_active:
+            if not self.is_active:
+                self.is_active = True
+                changed_fields.append('is_active')
+            if not self.started_at:
+                self.started_at = start_dt
+                changed_fields.append('started_at')
+            if self.ended_at is not None:
+                self.ended_at = None
+                changed_fields.append('ended_at')
+        else:
+            if self.is_active:
+                self.is_active = False
+                changed_fields.append('is_active')
+            if now > end_dt and self.ended_at is None:
+                self.ended_at = end_dt
+                changed_fields.append('ended_at')
+
+        if save and changed_fields:
+            self.save(update_fields=[*changed_fields, 'updated_at'])
+        return self.is_active
     
     def start_session(self):
         """Start the attendance session."""
@@ -99,29 +155,19 @@ class AttendanceSession(models.Model):
     
     @property
     def late_count(self):
-        """Get count of late students."""
-        return self.attendance_records.filter(status='late').count()
+        """Late status is retired; kept for backward-compatible payloads."""
+        return 0
     
     @property
     def absent_count(self):
         """Get count of absent students."""
-        return self.total_enrolled - self.present_count - self.late_count
+        return self.total_enrolled - self.present_count
     
     @property
     def is_expired(self):
         """True when the current time is past the session's scheduled end time."""
-        import datetime
-        end = None
-        if self.timetable_slot:
-            end = self.timetable_slot.end_time
-        elif self.end_time:
-            end = self.end_time
-
-        if end and self.date:
-            slot_end_naive = datetime.datetime.combine(self.date, end)
-            slot_end = timezone.make_aware(slot_end_naive, timezone.get_current_timezone())
-            return timezone.now() > slot_end
-        return False
+        _, end_dt = self._scheduled_bounds()
+        return bool(end_dt and timezone.now() > end_dt)
 
     @property
     def attendance_rate(self):
@@ -129,8 +175,7 @@ class AttendanceSession(models.Model):
         total = self.total_enrolled
         if total == 0:
             return 0
-        present = self.present_count + self.late_count
-        return round((present / total) * 100, 1)
+        return round((self.present_count / total) * 100, 1)
 
 
 class AttendanceRecord(models.Model):
@@ -140,7 +185,6 @@ class AttendanceRecord(models.Model):
     
     STATUS_CHOICES = [
         ('present', 'Present'),
-        ('late', 'Late'),
         ('absent', 'Absent'),
         ('excused', 'Excused'),
     ]
@@ -210,14 +254,6 @@ class AttendanceRecord(models.Model):
         self.verification_method = verification_method
         if confidence:
             self.verification_confidence = confidence
-        
-        # Check if late
-        session = self.session
-        if session.started_at:
-            time_diff = (timezone.now() - session.started_at).total_seconds() / 60
-            if time_diff > session.late_threshold_minutes:
-                self.status = 'late'
-        
         self.save()
     
     def mark_absent(self, marked_by=None):
@@ -293,11 +329,11 @@ class AttendanceSummary(models.Model):
         
         self.total_sessions = records.count()
         self.present_count = records.filter(status='present').count()
-        self.late_count = records.filter(status='late').count()
+        self.late_count = 0
         self.absent_count = records.filter(status='absent').count()
         self.excused_count = records.filter(status='excused').count()
-        
-        effective_present = self.present_count + self.late_count
+
+        effective_present = self.present_count
         if self.total_sessions > 0:
             self.attendance_percentage = round((effective_present / self.total_sessions) * 100, 2)
         else:

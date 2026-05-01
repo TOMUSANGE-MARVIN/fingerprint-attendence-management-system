@@ -18,7 +18,7 @@ def update_enrollment_stats(sender, instance, **kwargs):
         enrollment.update_attendance_stats()
         
         # Check if student is now at risk
-        if enrollment.is_at_risk and instance.status in ['present', 'late', 'absent']:
+        if enrollment.is_at_risk and instance.status in ['present', 'absent']:
             from apps.users.notification_service import NotificationService
             NotificationService.notify_at_risk(
                 instance.student,

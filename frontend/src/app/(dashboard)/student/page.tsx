@@ -42,7 +42,7 @@ const NOTIFICATION_ICONS: Record<string, React.ReactNode> = {
   system: <Bell className="w-4 h-4 text-gray-500 dark:text-gray-400" />,
 };
 
-type AttendanceStatus = "present" | "absent" | "late" | "excused";
+type AttendanceStatus = "present" | "absent" | "excused";
 
 interface StudentAttendanceApi {
   courseId: string;
@@ -50,7 +50,6 @@ interface StudentAttendanceApi {
   courseName: string;
   totalSessions: number;
   attended: number;
-  late: number;
   absent: number;
   attendancePercentage: number;
 }
@@ -128,7 +127,7 @@ function buildTrends(records: AttendanceRecordApi[], granularity: "week" | "mont
     }
     const entry = buckets.get(bucket.key)!;
     entry.total += 1;
-    if (record.status === "present" || record.status === "late") {
+    if (record.status === "present") {
       entry.attended += 1;
     }
   });
@@ -172,7 +171,7 @@ export default function StudentDashboardPage() {
           totalSessions: course.totalSessions,
           attended: course.attended,
           absent: course.absent,
-          late: course.late,
+          late: 0,
           excused: 0,
           attendancePercentage: course.attendancePercentage,
         }));
@@ -183,7 +182,7 @@ export default function StudentDashboardPage() {
         setExcusedCount(records.filter((record) => record.status === "excused").length);
 
         const totalSessions = summaries.reduce((sum, c) => sum + c.totalSessions, 0);
-        const totalAttended = summaries.reduce((sum, c) => sum + c.attended + c.late, 0);
+        const totalAttended = summaries.reduce((sum, c) => sum + c.attended, 0);
         const overallPercentage = totalSessions > 0
           ? Math.round((totalAttended / totalSessions) * 1000) / 10
           : 0;
@@ -241,9 +240,8 @@ export default function StudentDashboardPage() {
 
   // Calculate aggregate stats
   const totalSessions = analytics.courseSummaries.reduce((sum, c) => sum + c.totalSessions, 0);
-  const totalAttended = analytics.courseSummaries.reduce((sum, c) => sum + c.attended + c.late, 0);
+  const totalAttended = analytics.courseSummaries.reduce((sum, c) => sum + c.attended, 0);
   const totalAbsent = analytics.courseSummaries.reduce((sum, c) => sum + c.absent, 0);
-  const totalLate = analytics.courseSummaries.reduce((sum, c) => sum + c.late, 0);
   const coursesAtRisk = analytics.courseSummaries.filter(c => c.attendancePercentage < 75).length;
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
@@ -303,7 +301,7 @@ export default function StudentDashboardPage() {
         <StatCard
           title="Absences"
           value={totalAbsent}
-          subtitle={`${totalLate} late arrivals`}
+          subtitle={`${excusedCount} excused`}
           icon={<AlertTriangle className="w-6 h-6" />}
           variant={totalAbsent > 5 ? "danger" : "warning"}
         />
@@ -363,7 +361,6 @@ export default function StudentDashboardPage() {
             <AttendancePieChart
               present={totalAttended}
               absent={totalAbsent}
-              late={totalLate}
               excused={excusedCount}
               height={280}
             />

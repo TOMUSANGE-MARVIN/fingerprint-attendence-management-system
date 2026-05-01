@@ -20,14 +20,14 @@ interface AttendanceHistoryRecord {
   date: string;
   courseCode: string;
   courseName: string;
-  status: "present" | "absent" | "late" | "excused";
+  status: "present" | "absent" | "excused";
   checkInTime?: string;
   verificationMethod: "fingerprint" | "manual";
 }
 
 interface AttendanceRecordApi {
   id: string;
-  status: "present" | "absent" | "late" | "excused";
+  status: "present" | "absent" | "excused";
   verificationMethod?: "fingerprint" | "manual" | "qr_code" | "facial" | null;
   markedAt?: string | null;
   createdAt?: string;
@@ -39,7 +39,6 @@ interface AttendanceRecordApi {
 const STATUS_VARIANT: Record<string, "success" | "danger" | "warning" | "default"> = {
   present: "success",
   absent: "danger",
-  late: "warning",
   excused: "default",
 };
 
@@ -49,7 +48,7 @@ export default function StudentAttendancePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState<"all" | "present" | "absent" | "late">("all");
+  const [filterStatus, setFilterStatus] = useState<"all" | "present" | "absent" | "excused">("all");
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -66,11 +65,11 @@ export default function StudentAttendancePage() {
           date: record.sessionDate || record.createdAt || "",
           courseCode: record.courseCode || "—",
           courseName: record.courseName || "—",
-          status: record.status,
+          status: record.status as "present" | "absent" | "excused",
           checkInTime: record.markedAt
             ? new Date(record.markedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
             : undefined,
-          verificationMethod: (record.verificationMethod === "fingerprint" ? "fingerprint" : "manual"),
+          verificationMethod: (record.verificationMethod === "fingerprint" ? "fingerprint" : "manual") as "fingerprint" | "manual",
         }));
         mapped.sort((a, b) => {
           const timeB = new Date(b.date).getTime() || 0;
@@ -181,8 +180,6 @@ export default function StudentAttendancePage() {
 
   const presentCount = records.filter((r) => r.status === "present").length;
   const absentCount = records.filter((r) => r.status === "absent").length;
-  const lateCount = records.filter((r) => r.status === "late").length;
-
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
@@ -192,7 +189,7 @@ export default function StudentAttendancePage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card className="text-center">
           <p className="text-3xl font-bold text-success-600">{presentCount}</p>
           <p className="text-sm text-gray-500 dark:text-gray-400">Present</p>
@@ -200,10 +197,6 @@ export default function StudentAttendancePage() {
         <Card className="text-center">
           <p className="text-3xl font-bold text-danger-600">{absentCount}</p>
           <p className="text-sm text-gray-500 dark:text-gray-400">Absent</p>
-        </Card>
-        <Card className="text-center">
-          <p className="text-3xl font-bold text-warning-600">{lateCount}</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Late</p>
         </Card>
       </div>
 
@@ -229,7 +222,7 @@ export default function StudentAttendancePage() {
                 <option value="all">All</option>
                 <option value="present">Present</option>
                 <option value="absent">Absent</option>
-                <option value="late">Late</option>
+                <option value="excused">Excused</option>
               </select>
             </div>
           }

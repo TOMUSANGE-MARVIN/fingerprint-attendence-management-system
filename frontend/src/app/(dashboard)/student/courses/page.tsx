@@ -30,7 +30,6 @@ interface StudentAttendanceApi {
   totalSessions: number;
   attended: number;
   absent: number;
-  late: number;
   attendancePercentage: number;
 }
 
@@ -60,8 +59,8 @@ export default function StudentCoursesPage() {
           totalSessions: course.totalSessions,
           attended: course.attended,
           absent: course.absent,
-          late: course.late,
-          excused: course.excused ?? 0,
+          late: 0,
+          excused: 0,
           attendancePercentage: course.attendancePercentage,
         }));
         setCourses(mapped);
@@ -132,14 +131,6 @@ export default function StudentCoursesPage() {
       align: "center",
       render: (course) => (
         <span className="text-danger-600 font-medium">{course.absent}</span>
-      ),
-    },
-    {
-      key: "late",
-      header: "Late",
-      align: "center",
-      render: (course) => (
-        <span className="text-warning-600 font-medium">{course.late}</span>
       ),
     },
     {

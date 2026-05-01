@@ -78,10 +78,14 @@ class AttendanceSessionListSerializer(serializers.ModelSerializer):
     course_code = serializers.CharField(source='course.code', read_only=True)
     course_name = serializers.CharField(source='course.name', read_only=True)
     lecturer_name = serializers.CharField(source='lecturer.full_name', read_only=True)
+    is_active = serializers.SerializerMethodField()
     total_enrolled = serializers.ReadOnlyField()
     present_count = serializers.ReadOnlyField()
     attendance_rate = serializers.ReadOnlyField()
     is_expired = serializers.ReadOnlyField()
+
+    def get_is_active(self, obj):
+        return obj.is_within_window
 
     class Meta:
         model = AttendanceSession
@@ -99,6 +103,7 @@ class AttendanceSessionDetailSerializer(serializers.ModelSerializer):
     course_code = serializers.CharField(source='course.code', read_only=True)
     course_name = serializers.CharField(source='course.name', read_only=True)
     lecturer_name = serializers.CharField(source='lecturer.full_name', read_only=True)
+    is_active = serializers.SerializerMethodField()
     total_enrolled = serializers.ReadOnlyField()
     present_count = serializers.ReadOnlyField()
     late_count = serializers.ReadOnlyField()
@@ -106,6 +111,9 @@ class AttendanceSessionDetailSerializer(serializers.ModelSerializer):
     attendance_rate = serializers.ReadOnlyField()
     is_expired = serializers.ReadOnlyField()
     attendance_records = AttendanceRecordSerializer(many=True, read_only=True)
+
+    def get_is_active(self, obj):
+        return obj.is_within_window
 
     class Meta:
         model = AttendanceSession
@@ -215,7 +223,9 @@ class AttendanceSessionCreateSerializer(serializers.ModelSerializer):
                 validated_data['lecturer'] = (
                     slot.lecturer if slot and slot.lecturer else validated_data['course'].lecturer
                 )
-        return super().create(validated_data)
+        session = super().create(validated_data)
+        session.sync_active_state()
+        return session
 
 
 class AttendanceSummarySerializer(serializers.ModelSerializer):

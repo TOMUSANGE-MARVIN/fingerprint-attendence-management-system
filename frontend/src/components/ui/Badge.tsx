@@ -69,14 +69,13 @@ export function Badge({
 
 // Attendance Status Badge - specialized for attendance statuses
 interface AttendanceStatusBadgeProps {
-  status: "present" | "absent" | "late" | "excused";
+  status: "present" | "absent" | "excused";
 }
 
 export function AttendanceStatusBadge({ status }: AttendanceStatusBadgeProps) {
   const statusConfig: Record<string, { label: string; variant: BadgeVariant }> = {
     present: { label: "Present", variant: "success" },
     absent: { label: "Absent", variant: "danger" },
-    late: { label: "Late", variant: "warning" },
     excused: { label: "Excused", variant: "info" },
   };
 

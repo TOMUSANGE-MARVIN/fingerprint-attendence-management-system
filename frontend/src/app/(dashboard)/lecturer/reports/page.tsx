@@ -24,7 +24,6 @@ interface StudentRow {
   lastName: string;
   totalSessions: number;
   present: number;
-  late: number;
   absent: number;
   attendancePercentage: number;
   isAtRisk: boolean;
@@ -100,7 +99,7 @@ export default function LecturerReportsPage() {
       align: "center",
       render: (r) => (
         <span className="text-gray-900 dark:text-gray-100">
-          {r.present + r.late}/{r.totalSessions}
+          {r.present}/{r.totalSessions}
         </span>
       ),
     },
@@ -109,12 +108,6 @@ export default function LecturerReportsPage() {
       header: "Absent",
       align: "center",
       render: (r) => <span className="text-danger-600 font-medium">{r.absent}</span>,
-    },
-    {
-      key: "late",
-      header: "Late",
-      align: "center",
-      render: (r) => <span className="text-warning-600 font-medium">{r.late}</span>,
     },
     {
       key: "attendance",

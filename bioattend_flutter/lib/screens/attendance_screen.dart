@@ -60,14 +60,18 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             'No timetable slot found for ${widget.course.code} on $day (${tm.studyTime}).',
           );
         }
-        final slot = _pickBestSlot(slots);
+        final slot = _pickCurrentSlot(slots);
+        if (slot == null) {
+          throw ApiException(
+            'Attendance can only be captured during the current timetable slot.',
+          );
+        }
         final s = await _api.createSession(
           widget.course.id,
           timetableSlotId: slot['id']?.toString(),
           date: DateTime.now(),
         );
-        final started = await _api.startSession(s.id);
-        setState(() => _session = started);
+        setState(() => _session = s);
       }
       _setStatus('Session ready. Connect MFS100 and tap Scan.', Colors.blue);
     } catch (e) {
@@ -83,9 +87,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     return days[idx];
   }
 
-  Map<String, dynamic> _pickBestSlot(List<Map<String, dynamic>> slots) {
-    if (slots.length == 1) return slots.first;
-
+  Map<String, dynamic>? _pickCurrentSlot(List<Map<String, dynamic>> slots) {
     int toMins(String? t) {
       if (t == null || t.isEmpty) return 0;
       final parts = t.split(':');
@@ -97,18 +99,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
     final now = DateTime.now();
     final nowMins = now.hour * 60 + now.minute;
-    slots.sort((a, b) => toMins(a['start_time']?.toString()).compareTo(toMins(b['start_time']?.toString())));
 
     for (final slot in slots) {
       final start = toMins(slot['start_time']?.toString());
       final end = toMins(slot['end_time']?.toString());
       if (nowMins >= start && nowMins <= end) return slot; // current slot
     }
-    for (final slot in slots) {
-      final start = toMins(slot['start_time']?.toString());
-      if (start >= nowMins) return slot; // next upcoming
-    }
-    return slots.first; // fallback to earliest slot
+    return null;
   }
 
   Future<void> _onScanPressed() async {
@@ -152,10 +149,18 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       final res = await _api.markPresent(_session!.id, result.studentId!);
       final displayName = res.studentName ?? result.studentName ?? 'Student';
       final displayId = res.studentNumber ?? result.studentId ?? '';
-      _addLog(displayName, displayId, res.success, res.message);
+      final studentKey = res.studentId ?? result.studentId!;
+      _upsertLog(
+        studentKey,
+        displayName,
+        displayId,
+        res.success,
+        res.message,
+        alreadyMarked: res.alreadyMarked,
+      );
       _setStatus(
-        res.success ? '✓ $displayName marked present' : res.message,
-        res.success ? Colors.green : Colors.red,
+        res.message,
+        res.alreadyMarked ? Colors.orange : (res.success ? Colors.green : Colors.red),
       );
     } on PlatformException catch (e) {
       _setStatus('Scanner: ${e.message}', Colors.red);
@@ -180,46 +185,48 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     if (student == null) return;
     try {
       final res = await _api.markPresent(_session!.id, student.id);
-      _addLog(student.fullName, student.studentId, res.success, res.message);
+      final displayName = res.studentName ?? student.fullName;
+      final displayId = res.studentNumber ?? student.studentId;
+      final studentKey = res.studentId ?? student.id;
+      _upsertLog(
+        studentKey,
+        displayName,
+        displayId,
+        res.success,
+        res.message,
+        alreadyMarked: res.alreadyMarked,
+      );
       _showSnack(res.message, isError: !res.success);
     } catch (e) {
       _showSnack('Error: $e', isError: true);
     }
   }
 
-  Future<void> _endSession() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('End Session'),
-        content: const Text('Are you sure you want to end this attendance session?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red[700]),
-            child: const Text('End Session'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    try {
-      await _api.endSession(_session!.id);
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      _showSnack('Error: $e', isError: true);
-    }
-  }
-
-  void _addLog(String name, String id, bool success, String msg) {
-    setState(() => _log.insert(0, {
-          'name': name,
-          'id': id,
-          'success': success,
-          'message': msg,
-          'time': TimeOfDay.now().format(context),
-        }));
+  void _upsertLog(
+    String studentKey,
+    String name,
+    String id,
+    bool success,
+    String msg, {
+    bool alreadyMarked = false,
+  }) {
+    final normalizedName = name.trim().toLowerCase();
+    final payload = {
+      'studentKey': studentKey,
+      'name': name,
+      'id': id,
+      'success': success,
+      'alreadyMarked': alreadyMarked,
+      'message': msg,
+      'time': TimeOfDay.now().format(context),
+    };
+    setState(() {
+      _log.removeWhere((e) =>
+          e['studentKey'] == studentKey ||
+          (id.isNotEmpty && e['id'] == id) ||
+          ((e['name'] as String?)?.trim().toLowerCase() == normalizedName));
+      _log.insert(0, payload);
+    });
   }
 
   void _setStatus(String msg, Color color) {
@@ -245,14 +252,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         backgroundColor: const Color(0xFF2E7D32),
         foregroundColor: Colors.white,
         elevation: 0,
-        actions: [
-          if (_session != null)
-            TextButton.icon(
-              onPressed: _endSession,
-              icon: const Icon(Icons.stop_circle_outlined, color: Colors.white70),
-              label: const Text('End', style: TextStyle(color: Colors.white70)),
-            ),
-        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF2E7D32)))
@@ -347,7 +346,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   child: Row(children: [
                     const Icon(Icons.people, color: Color(0xFF2E7D32), size: 18),
                     const SizedBox(width: 6),
-                    Text('${_log.where((e) => e['success'] == true).length} present this session',
+                    Text(
+                        '${_log.where((e) => e['success'] == true && e['alreadyMarked'] != true).length} present this session',
                         style: const TextStyle(
                             color: Color(0xFF2E7D32), fontWeight: FontWeight.w600)),
                   ]),
@@ -375,23 +375,33 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                           itemBuilder: (_, i) {
                             final e = _log[i];
                             final ok = e['success'] as bool;
+                            final already = e['alreadyMarked'] == true;
+                            final subtitle = (e['id'] as String).isNotEmpty
+                                ? '${e['id']} • ${e['message']}'
+                                : (e['message'] as String);
                             return Card(
                               margin: const EdgeInsets.only(bottom: 8),
-                              color: ok ? Colors.green[50] : Colors.red[50],
+                              color: already
+                                  ? Colors.orange[50]
+                                  : (ok ? Colors.green[50] : Colors.red[50]),
                               elevation: 0,
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
                                   side: BorderSide(
-                                      color: ok ? Colors.green[200]! : Colors.red[200]!)),
+                                      color: already
+                                          ? Colors.orange[200]!
+                                          : (ok ? Colors.green[200]! : Colors.red[200]!))),
                               child: ListTile(
                                 dense: true,
                                 leading: Icon(
-                                    ok ? Icons.check_circle : Icons.cancel,
-                                    color: ok ? const Color(0xFF2E7D32) : Colors.red[700]),
+                                    already ? Icons.info : (ok ? Icons.check_circle : Icons.cancel),
+                                    color: already
+                                        ? Colors.orange[700]
+                                        : (ok ? const Color(0xFF2E7D32) : Colors.red[700])),
                                 title: Text(e['name'] as String,
                                     style: const TextStyle(
                                         fontWeight: FontWeight.w600, fontSize: 14)),
-                                subtitle: Text(e['id'] as String,
+                                subtitle: Text(subtitle,
                                     style: const TextStyle(fontSize: 12)),
                                 trailing: Text(e['time'] as String,
                                     style: const TextStyle(

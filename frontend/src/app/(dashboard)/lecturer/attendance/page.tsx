@@ -26,7 +26,6 @@ import {
   BookOpen,
   CheckCircle,
   XCircle,
-  Clock,
   Search,
   ChevronDown,
   ChevronUp,
@@ -113,8 +112,6 @@ export default function LecturerAttendancePage() {
     switch (status) {
       case "present":
         return <Badge variant="success" dot>Present</Badge>;
-      case "late":
-        return <Badge variant="warning" dot>Late</Badge>;
       case "absent":
         return <Badge variant="danger" dot>Absent</Badge>;
       default:
@@ -269,20 +266,13 @@ export default function LecturerAttendancePage() {
                   ) : course.attendanceRecords && course.attendanceRecords.length > 0 ? (
                     <div className="p-4">
                       {/* Summary Stats */}
-                      <div className="grid grid-cols-3 gap-4 mb-4">
+                      <div className="grid grid-cols-2 gap-4 mb-4">
                         <div className="text-center p-3 bg-success-50 dark:bg-green-950/30 rounded-lg">
                           <CheckCircle className="w-5 h-5 text-success-600 mx-auto mb-1" />
                           <p className="text-2xl font-bold text-success-600">
                             {course.attendanceRecords.filter((r) => r.status === "present").length}
                           </p>
                           <p className="text-xs text-gray-500">Present</p>
-                        </div>
-                        <div className="text-center p-3 bg-warning-50 dark:bg-yellow-950/30 rounded-lg">
-                          <Clock className="w-5 h-5 text-warning-600 mx-auto mb-1" />
-                          <p className="text-2xl font-bold text-warning-600">
-                            {course.attendanceRecords.filter((r) => r.status === "late").length}
-                          </p>
-                          <p className="text-xs text-gray-500">Late</p>
                         </div>
                         <div className="text-center p-3 bg-danger-50 dark:bg-red-950/30 rounded-lg">
                           <XCircle className="w-5 h-5 text-danger-600 mx-auto mb-1" />

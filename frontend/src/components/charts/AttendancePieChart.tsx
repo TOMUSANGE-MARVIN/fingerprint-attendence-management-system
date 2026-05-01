@@ -2,7 +2,7 @@
 
 /**
  * Attendance Pie/Donut Chart Component
- * Shows attendance distribution (present, absent, late, excused)
+ * Shows attendance distribution (present, absent, excused)
  */
 
 import React from "react";
@@ -24,7 +24,6 @@ interface AttendanceDistribution {
 interface AttendancePieChartProps {
   present: number;
   absent: number;
-  late: number;
   excused: number;
   height?: number;
 }
@@ -32,18 +31,16 @@ interface AttendancePieChartProps {
 export function AttendancePieChart({
   present,
   absent,
-  late,
   excused,
   height = 300,
 }: AttendancePieChartProps) {
   const data: AttendanceDistribution[] = [
     { name: "Present", value: present, color: "#22c55e" },
     { name: "Absent", value: absent, color: "#ef4444" },
-    { name: "Late", value: late, color: "#f59e0b" },
     { name: "Excused", value: excused, color: "#3b82f6" },
   ].filter((item) => item.value > 0);
 
-  const total = present + absent + late + excused;
+  const total = present + absent + excused;
 
   // Custom tooltip
   const CustomTooltip = ({ active, payload }: {

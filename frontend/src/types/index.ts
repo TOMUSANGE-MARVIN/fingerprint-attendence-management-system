@@ -149,7 +149,7 @@ export interface TimetableSlot {
 // ATTENDANCE TYPES
 // ============================================================================
 
-export type AttendanceStatus = "present" | "absent" | "late" | "excused";
+export type AttendanceStatus = "present" | "absent" | "excused";
 
 export interface AttendanceSession {
   id: number;
@@ -160,7 +160,7 @@ export interface AttendanceSession {
   isActive: boolean;
   totalPresent: number;
   totalAbsent: number;
-  totalLate: number;
+  totalLate?: number;
   createdBy: Pick<User, "id" | "firstName" | "lastName">;
 }
 
@@ -184,7 +184,7 @@ export interface StudentAttendanceSummary {
   totalSessions: number;
   attended: number;
   absent: number;
-  late: number;
+  late?: number;
   excused: number;
   attendancePercentage: number;
 }
