@@ -40,7 +40,7 @@ export default function LecturerCoursesPage() {
   useEffect(() => {
     if (!user) return;
     apiClient
-      .get<{ results: LecturerCourse[] } | LecturerCourse[]>(API_ENDPOINTS.courses.list)
+      .get<{ results: LecturerCourse[] } | LecturerCourse[]>("/courses/my/lecturer/")
       .then((res) => {
         const data = res.data;
         setCourses(Array.isArray(data) ? data : (data as any).results ?? []);
@@ -55,11 +55,20 @@ export default function LecturerCoursesPage() {
     setStep("students");
     setIsLoadingStudents(true);
     try {
-      const res = await apiClient.get<{ results: EnrolledStudent[] } | EnrolledStudent[]>(
-        `${API_ENDPOINTS.admin.users}?role=student&course=${course.id}&page_size=200`
+      const res = await apiClient.get<any[]>(
+        `/courses/${course.id}/students/?page_size=200`
       );
-      const data = res.data;
-      setStudents(Array.isArray(data) ? data : (data as any).results ?? []);
+      const raw: any[] = Array.isArray(res.data) ? res.data : (res.data as any).results ?? [];
+      // Normalise: backend returns { student_name, student_id, student_email, ... }
+      const normalised: EnrolledStudent[] = raw.map((e: any) => ({
+        id: e.id ?? e.student,
+        firstName: (e.studentName ?? e.student_name ?? "").split(" ")[0] ?? "",
+        lastName: (e.studentName ?? e.student_name ?? "").split(" ").slice(1).join(" ") ?? "",
+        email: e.studentEmail ?? e.student_email ?? "",
+        studentId: e.studentId ?? e.student_id ?? "",
+        studyTime: e.studyTime ?? e.study_time ?? "",
+      }));
+      setStudents(normalised);
     } catch {
       setStudents([]);
     } finally {

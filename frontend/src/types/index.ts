@@ -114,7 +114,7 @@ export interface Cohort {
 }
 
 export interface Course {
-  id: number;
+  id: string | number;
   code: string;
   name: string;
   description?: string;

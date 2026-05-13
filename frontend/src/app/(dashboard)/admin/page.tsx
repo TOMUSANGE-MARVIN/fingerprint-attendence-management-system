@@ -51,6 +51,34 @@ export default function AdminDashboardPage() {
   const [recentUsers, setRecentUsers] = useState<User[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [activeTab, setActiveTab] = useState<"overview" | "users" | "logs">("overview");
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const token = localStorage.getItem("access_token");
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+      const res = await fetch(`${baseUrl}${API_ENDPOINTS.analytics.export}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      a.download = match ? match[1] : "attendance_report.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("Failed to export report. Please try again.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -263,8 +291,8 @@ export default function AdminDashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" leftIcon={<Download className="w-4 h-4" />}>
-            Export Report
+          <Button variant="outline" leftIcon={<Download className="w-4 h-4" />} onClick={handleExport} isLoading={isExporting}>
+            {isExporting ? "Exporting…" : "Export Report"}
           </Button>
           <Button leftIcon={<Plus className="w-4 h-4" />}>
             Add User
@@ -466,7 +494,7 @@ export default function AdminDashboardPage() {
                 <Button variant="outline" size="sm" leftIcon={<Filter className="w-4 h-4" />}>
                   Filter
                 </Button>
-                <Button variant="outline" size="sm" leftIcon={<Download className="w-4 h-4" />}>
+                <Button variant="outline" size="sm" leftIcon={<Download className="w-4 h-4" />} onClick={handleExport} isLoading={isExporting}>
                   Export
                 </Button>
               </div>

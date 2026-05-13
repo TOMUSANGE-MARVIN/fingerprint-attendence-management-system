@@ -17,12 +17,12 @@ interface CourseForm {
   code: string;
   name: string;
   department: string;
-  credits: string;
+  totalLectures: string;
   lecturer: string;
 }
 
 const emptyForm = (): CourseForm => ({
-  code: "", name: "", department: "", credits: "3", lecturer: "",
+  code: "", name: "", department: "", totalLectures: "45", lecturer: "",
 });
 
 type Step = "programme" | "period" | "courses";
@@ -134,7 +134,7 @@ export default function AdminCoursesPage() {
       code: course.code ?? "",
       name: course.name ?? "",
       department: course.department ?? "",
-      credits: String((course as any).credits ?? course.creditUnits ?? 3),
+      totalLectures: String((course as any).totalLectures ?? (course as any).total_lectures ?? 45),
       lecturer: lecturerId,
     });
     setFormError(null);
@@ -157,7 +157,7 @@ export default function AdminCoursesPage() {
       code: form.code.trim(),
       name: form.name.trim(),
       department: form.department.trim() || undefined,
-      credits: parseInt(form.credits, 10),
+      total_lectures: parseInt(form.totalLectures, 10) || 45,
       programme: selectedProgramme.id,
       year_level: selectedYear,
       semester_number: selectedSemester,
@@ -432,7 +432,7 @@ export default function AdminCoursesPage() {
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
-                <Badge variant="default">{course.creditUnits ?? (course as any).credits} CU</Badge>
+                <Badge variant="default">{(course as any).totalLectures ?? (course as any).total_lectures ?? 45} lectures</Badge>
                 {course.department && <Badge variant="info">{course.department}</Badge>}
               </div>
               <div className="mt-3 flex items-center gap-1 text-xs text-gray-400">
@@ -468,10 +468,11 @@ export default function AdminCoursesPage() {
               required
             />
             <Input
-              label="Credits"
-              type="number" min="1" max="6"
-              value={form.credits}
-              onChange={(e) => setForm((f) => ({ ...f, credits: e.target.value }))}
+              label="Total Lectures"
+              type="number" min="1" max="200"
+              value={form.totalLectures}
+              onChange={(e) => setForm((f) => ({ ...f, totalLectures: e.target.value }))}
+              placeholder="e.g. 45"
             />
           </div>
 

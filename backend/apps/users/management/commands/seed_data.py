@@ -147,7 +147,7 @@ class Command(BaseCommand):
         # ------------------------------------------------------------------ #
         # Cohorts
         # ------------------------------------------------------------------ #
-        # BIT cohorts: 2022, 2023, 2024 intake
+        # BIT cohorts: 2022, 2023 intake (2023 is the active/main cohort)
         bit_2022, _ = Cohort.objects.get_or_create(
             programme=bit, intake_year=ay2022,
             defaults={'coordinator': lecturers[0], 'is_active': True}
@@ -156,31 +156,56 @@ class Command(BaseCommand):
             programme=bit, intake_year=ay2023,
             defaults={'coordinator': lecturers[1], 'is_active': True}
         )
-        bit_2024, _ = Cohort.objects.get_or_create(
-            programme=bit, intake_year=ay2024,
-            defaults={'coordinator': lecturers[0], 'is_active': True}
-        )
-        # DIT cohorts: 2023, 2024 intake
+        # DIT cohorts: 2023 intake (active cohort)
         dit_2023, _ = Cohort.objects.get_or_create(
             programme=dit, intake_year=ay2023,
             defaults={'coordinator': lecturers[2], 'is_active': True}
         )
-        dit_2024, _ = Cohort.objects.get_or_create(
-            programme=dit, intake_year=ay2024,
-            defaults={'coordinator': lecturers[2], 'is_active': True}
-        )
-        all_cohorts = [bit_2022, bit_2023, bit_2024, dit_2023, dit_2024]
+        all_cohorts = [bit_2022, bit_2023, dit_2023]
         self.stdout.write('Created cohorts')
 
         # ------------------------------------------------------------------ #
         # Students (assign to cohorts)
         # ------------------------------------------------------------------ #
+        from datetime import datetime, timezone as dt_tz
         students = []
-        # Distribute 20 students across cohorts
+        # All students enrolled August 2023 — use 2023/2024 as intake for newest cohort
+        # Distribute 20 students: BIT y3→bit_2022, BIT main→bit_2023, DIT→dit_2023
         cohort_assignments = (
-            [bit_2022] * 4 + [bit_2023] * 5 + [bit_2024] * 5 +
-            [dit_2023] * 3 + [dit_2024] * 3
+            [bit_2022] * 4 + [bit_2023] * 10 +
+            [dit_2023] * 6
         )
+        # August 2023 enrollment dates
+        aug_2023_dates = [
+            datetime(2023, 8, 7, 8, 0, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 8, 9, 0, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 9, 8, 30, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 10, 10, 0, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 11, 8, 0, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 12, 9, 30, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 14, 8, 0, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 15, 10, 0, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 16, 8, 0, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 17, 9, 0, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 18, 8, 30, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 21, 8, 0, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 22, 9, 0, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 23, 8, 0, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 24, 10, 0, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 25, 8, 30, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 28, 8, 0, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 29, 9, 0, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 30, 8, 0, tzinfo=dt_tz.utc),
+            datetime(2023, 8, 31, 10, 0, tzinfo=dt_tz.utc),
+        ]
+        # Student IDs in 2023-08-XXXXX format (matching KIU registration style)
+        student_ids_2023 = [
+            '2023-08-10101', '2023-08-10234', '2023-08-10378', '2023-08-10456',
+            '2023-08-10589', '2023-08-10634', '2023-08-10712', '2023-08-10845',
+            '2023-08-10923', '2023-08-11078', '2023-08-11156', '2023-08-11234',
+            '2023-08-11367', '2023-08-11445', '2023-08-11578', '2023-08-11656',
+            '2023-08-11734', '2023-08-11867', '2023-08-11945', '2023-08-12023',
+        ]
         for i in range(1, 21):
             cohort = cohort_assignments[i - 1]
             student, created = User.objects.get_or_create(
@@ -189,11 +214,13 @@ class Command(BaseCommand):
                     'first_name': 'Student',
                     'last_name': f'{i:02d}',
                     'role': 'student',
-                    'student_id': f'STU{2024000 + i}',
+                    'student_id': student_ids_2023[i - 1],
                     'department': 'Computing',
                     'program': cohort.programme.code,
                     'year_of_study': cohort.current_year_of_study or 1,
                     'cohort': cohort,
+                    'academic_year': ay2023,
+                    'date_joined': aug_2023_dates[i - 1],
                 }
             )
             if created:
@@ -244,6 +271,37 @@ class Command(BaseCommand):
                 'lecturer': lecturers[0], 'programme': bit,
                 'year_level': 3, 'semester_number': 1,
             },
+            # BIT Year 4 Semester 1 (displayed as Year 3 S2 / capstone)
+            {
+                'code': 'BIT401', 'name': 'Database Management',
+                'department': 'Computing', 'credits': 4,
+                'lecturer': lecturers[0], 'programme': bit,
+                'year_level': 3, 'semester_number': 2,
+            },
+            {
+                'code': 'BIT403', 'name': 'Mobile Application Development',
+                'department': 'Computing', 'credits': 3,
+                'lecturer': lecturers[2], 'programme': bit,
+                'year_level': 3, 'semester_number': 2,
+            },
+            {
+                'code': 'BIT404', 'name': 'Cloud Computing',
+                'department': 'Computing', 'credits': 3,
+                'lecturer': lecturers[1], 'programme': bit,
+                'year_level': 3, 'semester_number': 2,
+            },
+            {
+                'code': 'BIT405', 'name': 'Computer Forensics & Security',
+                'department': 'Computing', 'credits': 3,
+                'lecturer': lecturers[0], 'programme': bit,
+                'year_level': 3, 'semester_number': 2,
+            },
+            {
+                'code': 'ITE555', 'name': 'Project Planning & Management',
+                'department': 'Computing', 'credits': 3,
+                'lecturer': lecturers[1], 'programme': bit,
+                'year_level': 3, 'semester_number': 2,
+            },
             # DIT Year 1 Semester 1
             {
                 'code': 'DIT101', 'name': 'Fundamentals of IT',
@@ -280,34 +338,74 @@ class Command(BaseCommand):
         # ------------------------------------------------------------------ #
         # Timetable Slots (linked to cohort)
         # ------------------------------------------------------------------ #
-        days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
-        times = [(8, 0), (10, 0), (13, 0), (15, 0)]
+        # Year-3 BIT courses get 3 slots each: day / evening / weekend
+        # Other courses get a single day slot
+        yr3_bit_timetable = {
+            'BIT301': [
+                ('tuesday',   time( 8, 0), time(10, 0), 'LT5',   'day'),
+                ('friday',    time(11, 0), time(14, 0), 'CO4',   'day'),
+                ('friday',    time(17, 0), time(19, 0), 'E-LT5', 'evening'),
+                ('wednesday', time(17, 0), time(19, 0), 'E-LT5', 'evening'),
+                ('saturday',  time(14, 0), time(17, 0), 'W-LT5', 'weekend'),
+            ],
+            'BIT401': [
+                ('monday',   time( 8, 0), time(10, 0), 'LH1',   'day'),
+                ('monday',   time(17, 0), time(19, 0), 'E-LH1', 'evening'),
+                ('saturday', time( 8, 0), time(11, 0), 'W-LH1', 'weekend'),
+            ],
+            'BIT403': [
+                ('tuesday',  time(10, 0), time(12, 0), 'LH2',   'day'),
+                ('tuesday',  time(17, 0), time(19, 0), 'E-LH2', 'evening'),
+                ('saturday', time(11, 0), time(14, 0), 'W-LH2', 'weekend'),
+            ],
+            'BIT404': [
+                ('wednesday', time(14, 0), time(16, 0), 'LH3',   'day'),
+                ('wednesday', time(17, 0), time(19, 0), 'E-LH3', 'evening'),
+                ('sunday',    time( 8, 0), time(11, 0), 'W-LH3', 'weekend'),
+            ],
+            'BIT405': [
+                ('thursday', time( 8, 0), time(10, 0), 'LH4',   'day'),
+                ('thursday', time(17, 0), time(19, 0), 'E-LH4', 'evening'),
+                ('sunday',   time(11, 0), time(14, 0), 'W-LH4', 'weekend'),
+            ],
+            'ITE555': [
+                ('wednesday', time( 8, 0), time(10, 0), 'LH5',   'day'),
+                ('wednesday', time(17, 0), time(19, 0), 'E-LH5', 'evening'),
+                ('saturday',  time(14, 0), time(17, 0), 'W-LH5', 'weekend'),
+            ],
+        }
 
-        # Map: (programme, year_level) → cohort with that intake
-        # Courses in BIT Y1 → bit_2024, BIT Y2 → bit_2023, BIT Y3 → bit_2022
-        # Courses in DIT Y1 → dit_2024, DIT Y2 → dit_2023
         cohort_for_course = {
-            'BIT101': bit_2024, 'BIT102': bit_2024,
+            'BIT101': bit_2023, 'BIT102': bit_2023,
             'BIT201': bit_2023, 'BIT202': bit_2023,
-            'BIT301': bit_2022,
-            'DIT101': dit_2024,
+            'BIT301': bit_2023, 'BIT401': bit_2023, 'BIT403': bit_2023,
+            'BIT404': bit_2023, 'BIT405': bit_2023, 'ITE555': bit_2023,
+            'DIT101': dit_2023,
             'DIT201': dit_2023,
         }
 
         for course in courses:
             if not course.timetable_slots.exists():
-                day = random.choice(days)
-                sh, sm = random.choice(times)
                 cohort = cohort_for_course.get(course.code)
-                TimetableSlot.objects.create(
-                    course=course,
-                    cohort=cohort,
-                    day_of_week=day,
-                    start_time=time(sh, sm),
-                    end_time=time(sh + 2, sm),
-                    room=f'Room {random.randint(100, 500)}',
-                    building='Main Building',
-                )
+                if course.code in yr3_bit_timetable:
+                    for day, st, et, room, _ in yr3_bit_timetable[course.code]:
+                        TimetableSlot.objects.create(
+                            course=course, cohort=cohort,
+                            day_of_week=day, start_time=st, end_time=et,
+                            room=room, building='Main Building',
+                        )
+                else:
+                    days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
+                    times_list = [(8, 0), (10, 0), (13, 0), (15, 0)]
+                    day = random.choice(days)
+                    sh, sm = random.choice(times_list)
+                    TimetableSlot.objects.create(
+                        course=course, cohort=cohort,
+                        day_of_week=day, start_time=time(sh, sm),
+                        end_time=time(sh + 2, sm),
+                        room=f'Room {random.randint(100, 500)}',
+                        building='Main Building',
+                    )
                 self.stdout.write(f'Created timetable for {course.code}')
 
         # ------------------------------------------------------------------ #
@@ -319,9 +417,9 @@ class Command(BaseCommand):
                 continue
             prog = cohort.programme
             yr = cohort.current_year_of_study or 1
-            # Enroll in courses that match programme + year_level <= current year
+            # Enroll only in courses matching the student's current year
             matching = [c for c in courses
-                        if c.programme == prog and (c.year_level or 0) <= yr]
+                        if c.programme == prog and c.year_level == yr]
             if not matching:
                 matching = random.sample(courses, min(3, len(courses)))
             for course in matching:
@@ -381,6 +479,6 @@ class Command(BaseCommand):
         self.stdout.write('  Student:  student01@university.edu / student123')
         self.stdout.write('')
         self.stdout.write('Programmes: BIT (3 yr), DIT (2 yr)')
-        self.stdout.write('Cohorts:    BIT 2022/2023, BIT 2023/2024, BIT 2024/2025')
-        self.stdout.write('            DIT 2023/2024, DIT 2024/2025')
+        self.stdout.write('Cohorts:    BIT 2022/2023, BIT 2023/2024')
+        self.stdout.write('            DIT 2023/2024')
         self.stdout.write('Courses:    BIT101-BIT301, DIT101, DIT201')

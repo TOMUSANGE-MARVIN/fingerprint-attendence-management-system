@@ -216,6 +216,7 @@ class Course(models.Model):
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True, null=True)
     credits = models.IntegerField(default=3)
+    total_lectures = models.IntegerField(default=45, help_text="Total number of lectures/sessions planned for this course. Used as the denominator for attendance percentage.")
     department = models.CharField(max_length=100, blank=True, default="")
     semester = models.CharField(max_length=20, blank=True, default="")
     academic_year = models.CharField(max_length=20, blank=True, default="")
@@ -331,24 +332,31 @@ class Enrollment(models.Model):
         return f"{self.student.full_name} - {self.course.code}"
     
     def update_attendance_stats(self):
-        """Update cached attendance statistics."""
-        from apps.attendance.models import AttendanceRecord
-        
-        records = AttendanceRecord.objects.filter(
+        """Update cached attendance statistics using course.total_lectures as denominator."""
+        from apps.attendance.models import AttendanceRecord, AttendanceSession
+
+        # Count all sessions held for this course
+        sessions_held = AttendanceSession.objects.filter(course=self.course).count()
+
+        # Count only records where the student was present/late
+        self.attended_sessions = AttendanceRecord.objects.filter(
             student=self.student,
-            session__course=self.course
-        )
-        
-        self.total_sessions = records.count()
-        self.attended_sessions = records.filter(status='present').count()
-        
-        if self.total_sessions > 0:
+            session__course=self.course,
+            status__in=['present', 'late']
+        ).count()
+
+        self.total_sessions = sessions_held
+
+        # Use total_lectures as the base denominator for accurate percentage
+        denominator = self.course.total_lectures if self.course.total_lectures > 0 else sessions_held
+
+        if denominator > 0:
             self.attendance_percentage = round(
-                (self.attended_sessions / self.total_sessions) * 100, 2
+                (self.attended_sessions / denominator) * 100, 2
             )
         else:
             self.attendance_percentage = 0
-        
+
         self.save(update_fields=['total_sessions', 'attended_sessions', 'attendance_percentage', 'updated_at'])
     
     @property

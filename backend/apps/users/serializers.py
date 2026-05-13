@@ -95,12 +95,12 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
 class UserUpdateSerializer(serializers.ModelSerializer):
     """Serializer for updating user information."""
-    
+
     class Meta:
         model = User
         fields = [
             'first_name', 'last_name', 'phone', 'avatar', 'department',
-            'program', 'year_of_study', 'study_time', 'academic_year',
+            'program', 'year_of_study', 'study_time', 'academic_year', 'cohort',
             'faculty', 'specialization'
         ]
 

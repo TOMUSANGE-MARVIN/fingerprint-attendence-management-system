@@ -31,7 +31,7 @@ function convertKeysToCamelCase(obj: unknown): unknown {
 }
 
 // Base API URL from environment variables
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
 // Token storage keys
 const ACCESS_TOKEN_KEY = "access_token";
@@ -232,6 +232,7 @@ export const API_ENDPOINTS = {
     markAttendance: "/attendance/mark/",
     fingerprintVerify: "/attendance/fingerprint/verify/",
     adminCourseSummary: (courseId: string | number) => `/attendance/admin/course/${courseId}/`,
+    adminStudentAttendance: (studentId: string) => `/attendance/admin/student/${studentId}/`,
     myStudent: "/attendance/my/student/",
   },
 
@@ -312,6 +313,10 @@ export const API_ENDPOINTS = {
   analytics: {
     dashboard: "/analytics/dashboard/",
     course: (id: string) => `/analytics/course/${id}/`,
+    coursePdf: (id: string) => `/analytics/course/${id}/pdf/`,
     atRisk: "/analytics/at-risk/",
+    export: "/analytics/export/",
+    thresholdExcel: "/analytics/threshold-excel/",
+    reportFilters: "/analytics/report-filters/",
   },
 } as const;

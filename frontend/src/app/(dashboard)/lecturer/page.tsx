@@ -72,13 +72,24 @@ export default function LecturerDashboardPage() {
         setCourses(fetchedCourses);
 
         // Fetch sessions (all, ordered by date descending)
-        const sessionsRes = await apiClient.get<{ results?: AttendanceSession[]; count?: number } | AttendanceSession[]>(
-          `${API_ENDPOINTS.attendance.sessions}?ordering=-date&page_size=20`
+        const sessionsRes = await apiClient.get<{ results?: any[]; count?: number } | any[]>(
+          `${API_ENDPOINTS.attendance.sessions}?ordering=-date,-start_time&page_size=20`
         );
         const sessionsData = sessionsRes.data;
-        const allSessions: AttendanceSession[] = Array.isArray(sessionsData)
+        const rawSessions: any[] = Array.isArray(sessionsData)
           ? sessionsData
           : (sessionsData as any).results ?? [];
+
+        // Normalise backend fields to match AttendanceSession shape
+        const allSessions: AttendanceSession[] = rawSessions.map((s: any) => ({
+          ...s,
+          course: { id: s.course, code: s.courseCode ?? s.course_code, name: s.courseName ?? s.course_name },
+          totalPresent: s.presentCount ?? s.totalPresent ?? 0,
+          totalAbsent: (s.totalEnrolled ?? 0) - (s.presentCount ?? 0),
+          totalLate: 0,
+          startTime: s.startTime ?? s.start_time,
+          isActive: s.isActive ?? s.is_active ?? false,
+        }));
 
         const active = allSessions.filter((s) => s.isActive);
         const recent = allSessions.filter((s) => !s.isActive);

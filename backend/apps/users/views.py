@@ -202,6 +202,29 @@ class UserViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         user = serializer.save()
+
+        # Auto-assign cohort when student has programme + academic_year but no cohort
+        if user.role == 'student' and not user.cohort_id and user.program and user.academic_year_id:
+            try:
+                from apps.courses.models import Cohort, Programme, Enrollment, Course
+                programme = Programme.objects.filter(code=user.program).first()
+                if programme:
+                    cohort, created = Cohort.objects.get_or_create(
+                        programme=programme,
+                        intake_year=user.academic_year,
+                        defaults={'is_active': True}
+                    )
+                    user.cohort = cohort
+                    user.save(update_fields=['cohort'])
+                    # Enroll in year-1 semester-1 courses for this programme
+                    yr1_courses = Course.objects.filter(
+                        programme=programme, year_level=1, is_active=True
+                    )
+                    for course in yr1_courses:
+                        Enrollment.objects.get_or_create(student=user, course=course)
+            except Exception:
+                pass  # non-fatal — cohort assignment is best-effort
+
         AuditLog.objects.create(
             user=self.request.user,
             action='CREATE',
@@ -211,6 +234,42 @@ class UserViewSet(viewsets.ModelViewSet):
             ip_address=self.get_client_ip(self.request)
         )
     
+    def perform_update(self, serializer):
+        user = serializer.save()
+
+        # Auto-assign / re-assign cohort for students when programme or academic_year changes
+        if user.role == 'student' and user.program and user.academic_year_id:
+            try:
+                from apps.courses.models import Cohort, Programme, Enrollment, Course
+                programme = Programme.objects.filter(code=user.program).first()
+                if programme:
+                    cohort, _ = Cohort.objects.get_or_create(
+                        programme=programme,
+                        intake_year=user.academic_year,
+                        defaults={'is_active': True}
+                    )
+                    # Only update cohort if it changed or was missing
+                    if user.cohort_id != cohort.id:
+                        user.cohort = cohort
+                        user.save(update_fields=['cohort'])
+                        # Enroll in year-1 semester-1 courses if newly added to cohort
+                        yr1_courses = Course.objects.filter(
+                            programme=programme, year_level=1, is_active=True
+                        )
+                        for course in yr1_courses:
+                            Enrollment.objects.get_or_create(student=user, course=course)
+            except Exception:
+                pass
+
+        AuditLog.objects.create(
+            user=self.request.user,
+            action='UPDATE',
+            entity_type='User',
+            entity_id=str(user.id),
+            description=f"Admin updated user: {user.email}",
+            ip_address=self.get_client_ip(self.request)
+        )
+
     def perform_destroy(self, instance):
         email = instance.email
         instance_id = str(instance.id)

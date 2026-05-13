@@ -150,15 +150,15 @@ class AttendanceSession(models.Model):
     
     @property
     def present_count(self):
-        """Get count of present students."""
-        return self.attendance_records.filter(status='present').count()
-    
-
+        """Get count of present students (including late)."""
+        present = self.attendance_records.filter(status='present').count()
+        late = self.attendance_records.filter(status='late').count()
+        return present + late
     
     @property
-    def absent_count(self):
-        """Get count of absent students."""
-        return self.attendance_records.filter(status='absent').count()
+    def late_count(self):
+        """Get count of late students. Late is counted as present for attendance purposes."""
+        return self.attendance_records.filter(status='late').count()
     
     @property
     def is_expired(self):
@@ -182,6 +182,7 @@ class AttendanceRecord(models.Model):
     
     STATUS_CHOICES = [
         ('present', 'Present'),
+        ('late', 'Late'),
         ('absent', 'Absent'),
     ]
     

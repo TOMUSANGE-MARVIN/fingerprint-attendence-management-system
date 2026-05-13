@@ -18,6 +18,7 @@ import {
   GraduationCap,
   Clock,
   CheckCircle2,
+  XCircle,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
@@ -85,29 +86,31 @@ function formatTimestamp(iso: string | null): string {
 function SessionRow({ session, students }: { session: Session; students: StudentRecord[] }) {
   const [open, setOpen] = useState(false);
 
-  const attendees: AttendeeRecord[] = students
-    .filter((s) => {
-      const rec = s.sessionRecords[session.id];
-      return rec && rec.status === "present";
-    })
+  // Build full list: present first, then absent — all students
+  const allAttendees: AttendeeRecord[] = students
     .map((s) => {
       const rec = s.sessionRecords[session.id];
+      const status = (rec?.status === "present" || rec?.status === "late") ? "present" : "absent";
       return {
         studentId: s.studentId,
         studentNumber: s.studentNumber,
         firstName: s.firstName,
         lastName: s.lastName,
-        status: "present" as const,
-        markedAt: rec.markedAt,
-        verificationMethod: rec.verificationMethod,
+        status: status as "present" | "absent",
+        markedAt: rec?.markedAt ?? null,
+        verificationMethod: rec?.verificationMethod ?? null,
       };
     })
     .sort((a, b) => {
-      if (a.markedAt && b.markedAt) return a.markedAt.localeCompare(b.markedAt);
+      // Present first, then absent
+      if (a.status !== b.status) return a.status === "present" ? -1 : 1;
+      if (a.status === "present" && a.markedAt && b.markedAt)
+        return a.markedAt.localeCompare(b.markedAt);
       return a.studentNumber.localeCompare(b.studentNumber);
     });
 
   const attended = session.presentCount;
+  const absentCount = session.totalEnrolled - attended;
 
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
@@ -138,12 +141,17 @@ function SessionRow({ session, students }: { session: Session; students: Student
           </div>
         </div>
 
-        {/* Attendance count */}
-        <div className="text-right shrink-0">
+        {/* Attendance count + absent badge */}
+        <div className="text-right shrink-0 flex flex-col items-end gap-1">
           <p className="font-semibold text-gray-900 dark:text-gray-100">
             {attended} <span className="text-gray-400 font-normal text-sm">/ {session.totalEnrolled}</span>
           </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">attended</p>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-success-600 dark:text-green-400 font-medium">{attended} present</span>
+            {absentCount > 0 && (
+              <span className="text-danger-600 dark:text-red-400 font-medium">{absentCount} absent</span>
+            )}
+          </div>
         </div>
 
         {/* Expand toggle */}
@@ -152,12 +160,12 @@ function SessionRow({ session, students }: { session: Session; students: Student
         </div>
       </button>
 
-      {/* Attendees list */}
+      {/* Full student list */}
       {open && (
         <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-          {attendees.length === 0 ? (
+          {allAttendees.length === 0 ? (
             <p className="px-5 py-4 text-sm text-gray-500 dark:text-gray-400 italic">
-              No attendance recorded for this session.
+              No students found for this session.
             </p>
           ) : (
             <table className="w-full text-sm">
@@ -172,26 +180,44 @@ function SessionRow({ session, students }: { session: Session; students: Student
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
-                {attendees.map((a, idx) => (
-                  <tr key={a.studentId} className="bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                {allAttendees.map((a, idx) => (
+                  <tr
+                    key={a.studentId}
+                    className={cn(
+                      "hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors",
+                      a.status === "absent"
+                        ? "bg-red-50/40 dark:bg-red-950/20"
+                        : "bg-white dark:bg-gray-900"
+                    )}
+                  >
                     <td className="px-5 py-3 text-gray-400 dark:text-gray-500">{idx + 1}</td>
                     <td className="px-5 py-3 font-medium text-gray-900 dark:text-gray-100">
                       {a.firstName} {a.lastName}
                     </td>
                     <td className="px-5 py-3 text-gray-600 dark:text-gray-300 font-mono text-xs">{a.studentNumber}</td>
                     <td className="px-5 py-3 text-gray-600 dark:text-gray-300">
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5 text-gray-400" />
-                        {formatTimestamp(a.markedAt)}
-                      </span>
+                      {a.status === "present" ? (
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-gray-400" />
+                          {formatTimestamp(a.markedAt)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 dark:text-gray-500">—</span>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-gray-500 dark:text-gray-400 capitalize text-xs">
-                      {a.verificationMethod ?? "—"}
+                      {a.status === "present" ? (a.verificationMethod ?? "—") : "—"}
                     </td>
                     <td className="px-5 py-3">
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-success-600 dark:text-green-400">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Present
-                      </span>
+                      {a.status === "present" ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-success-600 dark:text-green-400">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Present
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-danger-600 dark:text-red-400">
+                          <XCircle className="w-3.5 h-3.5" /> Absent
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

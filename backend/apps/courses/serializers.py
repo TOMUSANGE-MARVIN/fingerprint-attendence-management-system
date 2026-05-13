@@ -130,6 +130,7 @@ class CourseListSerializer(serializers.ModelSerializer):
     faculty_name = serializers.CharField(source='faculty.name', read_only=True, default=None)
     academic_period_display = serializers.CharField(source='academic_period.__str__', read_only=True, default=None)
     programme_code = serializers.CharField(source='programme.code', read_only=True, default=None)
+    programme_name = serializers.CharField(source='programme.name', read_only=True, default=None)
     coordinator_name = serializers.SerializerMethodField()
     coordinator_id = serializers.CharField(source='coordinator.id', read_only=True, default=None)
 
@@ -141,9 +142,9 @@ class CourseListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Course
         fields = [
-            'id', 'code', 'name', 'department', 'semester', 'academic_year',
+            'id', 'code', 'name', 'total_lectures', 'department', 'semester', 'academic_year',
             'faculty', 'faculty_name', 'academic_period', 'academic_period_display',
-            'programme', 'programme_code', 'year_level', 'semester_number',
+            'programme', 'programme_code', 'programme_name', 'year_level', 'semester_number',
             'lecturer', 'lecturer_name', 'total_students', 'attendance_threshold',
             'coordinator', 'coordinator_id', 'coordinator_name',
             'is_active', 'schedule', 'created_at'
@@ -172,7 +173,7 @@ class CourseDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Course
         fields = [
-            'id', 'code', 'name', 'description', 'credits', 'department',
+            'id', 'code', 'name', 'description', 'credits', 'total_lectures', 'department',
             'semester', 'academic_year', 'faculty', 'faculty_name',
             'academic_period', 'academic_period_display',
             'programme', 'programme_code', 'programme_name', 'year_level', 'semester_number',
@@ -203,7 +204,7 @@ class CourseCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Course
         fields = [
-            'code', 'name', 'description', 'credits', 'department',
+            'code', 'name', 'description', 'credits', 'total_lectures', 'department',
             'semester', 'academic_year', 'faculty', 'academic_period',
             'programme', 'year_level', 'semester_number',
             'lecturer', 'coordinator', 'attendance_threshold', 'is_active'
@@ -266,7 +267,7 @@ class StudentCourseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Course
         fields = [
-            'id', 'code', 'name', 'description', 'credits', 'department',
+            'id', 'code', 'name', 'description', 'credits', 'total_lectures', 'department',
             'semester', 'lecturer_name', 'attendance_threshold', 'schedule',
             'enrollment_info'
         ]
@@ -300,7 +301,7 @@ class LecturerCourseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Course
         fields = [
-            'id', 'code', 'name', 'description', 'credits', 'department',
+            'id', 'code', 'name', 'description', 'credits', 'total_lectures', 'department',
             'semester', 'total_students', 'attendance_threshold', 'schedule',
             'average_attendance', 'at_risk_students', 'is_active', 'created_at'
         ]

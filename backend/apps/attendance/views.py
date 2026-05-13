@@ -359,10 +359,10 @@ class StudentAttendanceView(APIView):
             )
             
             total = records.count()
-            present = records.filter(status='present').count()
+            present = records.filter(status__in=['present', 'late']).count()
             absent = records.filter(status='absent').count()
             
-            attendance_pct = round((present / total) * 100, 1) if total > 0 else 0
+            attendance_pct = round((present / course.total_lectures) * 100, 1) if course.total_lectures > 0 else 0
             
             recent_records = records.order_by('-session__date')[:5]
             
@@ -381,6 +381,99 @@ class StudentAttendanceView(APIView):
             })
         
         return Response(result)
+
+
+class AdminStudentAttendanceView(APIView):
+    """Admin view: get full attendance report for any student."""
+    permission_classes = [permissions.IsAuthenticated, IsAdmin]
+
+    def get(self, request, student_id):
+        UserModel = get_user_model()
+        try:
+            student = UserModel.objects.get(id=student_id, role='student')
+        except UserModel.DoesNotExist:
+            return Response({'detail': 'Student not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Only show courses for the student's current year of study
+        # so the analytics matches the attendance page filter
+        current_year = student.cohort.current_year_of_study if student.cohort else None
+
+        enrolled_courses = Course.objects.filter(
+            enrollments__student=student, enrollments__is_active=True
+        )
+        if current_year is not None:
+            enrolled_courses = enrolled_courses.filter(year_level=current_year)
+        courses = enrolled_courses.distinct().order_by('semester_number', 'code')
+
+        result = []
+        for course in courses:
+            # Get ALL sessions for this course ordered by date
+            sessions = AttendanceSession.objects.filter(
+                course=course
+            ).order_by('date')
+
+            # Build a lookup of records that actually exist for this student
+            existing_records = {
+                r.session_id: r
+                for r in AttendanceRecord.objects.filter(
+                    student=student, session__course=course
+                ).select_related('session')
+            }
+
+            sessions_held = sessions.count()
+            present = 0
+            absent = 0
+            trend = []
+            running_present = 0
+
+            for i, session in enumerate(sessions, 1):
+                rec = existing_records.get(session.id)
+                if rec and rec.status in ('present', 'late'):
+                    running_present += 1
+                    present += 1
+                    s_status = rec.status
+                else:
+                    # No record or marked absent → counts as absent
+                    absent += 1
+                    s_status = rec.status if rec else 'absent'
+
+                trend.append({
+                    'session': i,
+                    'date': str(session.date),
+                    'status': s_status,
+                    'cumulative_pct': round(running_present / course.total_lectures * 100, 1) if course.total_lectures > 0 else 0,
+                })
+
+            pct = round((present / course.total_lectures) * 100, 1) if course.total_lectures > 0 else 0
+
+            result.append({
+                'course_id': str(course.id),
+                'course_code': course.code,
+                'course_name': course.name,
+                'total_lectures': course.total_lectures,
+                'sessions_held': sessions_held,
+                'attended': present,
+                'absent': absent,
+                'attendance_percentage': pct,
+                'threshold': course.attendance_threshold,
+                'is_at_risk': pct < course.attendance_threshold,
+                'trend': trend,
+            })
+
+        return Response({
+            'student': {
+                'id': str(student.id),
+                'name': student.get_full_name(),
+                'student_number': student.student_id,
+                'email': student.email,
+                'study_time': student.study_time,
+                'cohort': str(student.cohort) if student.cohort else None,
+            },
+            'courses': result,
+            'overall_percentage': round(
+                sum(c['attendance_percentage'] for c in result) / len(result), 1
+            ) if result else 0,
+        })
 
 
 class StudentCourseAttendanceView(APIView):
@@ -420,7 +513,7 @@ class StudentCourseAttendanceView(APIView):
                 'present': present,
                 'late': 0,
                 'absent': total - present,
-                'attendance_percentage': round((present / total) * 100, 1) if total > 0 else 0
+                'attendance_percentage': round((present / course.total_lectures) * 100, 1) if course.total_lectures > 0 else 0
             },
             'records': serializer.data
         })
@@ -653,7 +746,7 @@ class AdminCourseAttendanceSummaryView(APIView):
             records = AttendanceRecord.objects.filter(session__course=course, student=e.student)
             present = records.filter(status='present').count()
             absent = records.filter(status='absent').count()
-            pct = round((present / total_sessions) * 100, 1) if total_sessions > 0 else 0
+            pct = round((present / course.total_lectures) * 100, 1) if course.total_lectures > 0 else 0
             students_data.append({
                 'student_id': str(e.student.id),
                 'student_number': e.student.student_id,
@@ -869,7 +962,7 @@ class CourseAttendanceRegisterView(APIView):
                 'room': s.room or '',
                 'present_count': s.present_count,
                 'late_count': 0,
-                'absent_count': s.absent_count,
+                'absent_count': s.total_enrolled - s.present_count,
                 'total_enrolled': s.total_enrolled,
                 'attendance_rate': s.attendance_rate,
             })
@@ -896,7 +989,7 @@ class CourseAttendanceRegisterView(APIView):
             absent = sum(1 for r in session_records.values() if r['status'] == 'absent')
             excused = sum(1 for r in session_records.values() if r['status'] == 'excused')
             attended = present
-            pct = round(attended / total_sessions * 100, 1) if total_sessions > 0 else 0
+            pct = round(attended / course.total_lectures * 100, 1) if course.total_lectures > 0 else 0
 
             students_data.append({
                 'student_id': student_str,
@@ -926,6 +1019,7 @@ class CourseAttendanceRegisterView(APIView):
                 'year_level': course.year_level,
                 'semester_number': course.semester_number,
                 'total_sessions': total_sessions,
+                'total_lectures': course.total_lectures,
                 'threshold': course.attendance_threshold,
             },
             'sessions': sessions_data,

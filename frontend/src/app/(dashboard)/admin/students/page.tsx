@@ -35,6 +35,10 @@ import {
   Users,
   Filter,
   Pencil,
+  BarChart2,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from "lucide-react";
 import { formatDate, cn } from "@/lib/utils";
 
@@ -106,6 +110,9 @@ export default function AdminStudentsPage() {
   const [selectedDepartment, setSelectedDepartment] = useState<Department | null>(null);
   const [departmentSearch, setDepartmentSearch]   = useState("");
 
+  // All programmes (for form dropdowns)
+  const [allProgrammes, setAllProgrammes]       = useState<Programme[]>([]);
+
   // Programmes
   const [programmes, setProgrammes]             = useState<Programme[]>([]);
   const [selectedProgramme, setSelectedProgramme] = useState<Programme | null>(null);
@@ -156,13 +163,24 @@ export default function AdminStudentsPage() {
   const [editFormErrors, setEditFormErrors]     = useState<EditFormErrors>({});
   const [isUpdating, setIsUpdating]             = useState(false);
 
-  // ── Boot: load all students + departments + academic years ──────────────────
+  // ── Attendance modal ────────────────────────────────────────────────────────
+  const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
+  const [attendanceStudent, setAttendanceStudent]         = useState<User | null>(null);
+  const [attendanceData, setAttendanceData]               = useState<any | null>(null);
+  const [isLoadingAttendance, setIsLoadingAttendance]     = useState(false);
+  const [attendanceError, setAttendanceError]             = useState<string | null>(null);
+
+  // ── Boot: load all students + departments + programmes + academic years ──────
   useEffect(() => {
     Promise.all([
       fetchStudents("all"),
       apiClient.get<any>(API_ENDPOINTS.faculties.list).then((r) => {
         const d = r.data;
         setDepartments(Array.isArray(d) ? d : d.results ?? []);
+      }),
+      apiClient.get<any>(API_ENDPOINTS.programmes.list).then((r) => {
+        const d = r.data;
+        setAllProgrammes(Array.isArray(d) ? d : d.results ?? []);
       }),
       apiClient.get<any>(API_ENDPOINTS.academicYears.list).then((r) => {
         const d = r.data;
@@ -301,6 +319,11 @@ export default function AdminStudentsPage() {
       setStudents((p) => [newStudent, ...p]);
       setCreatedStudent(newStudent);
       setModalStep("fingerprint");
+      // Refresh cohort list so any newly-created cohort appears immediately
+      apiClient.get<any>(API_ENDPOINTS.cohorts.list).then((r) => {
+        const d = r.data;
+        setCohorts(Array.isArray(d) ? d : d.results ?? []);
+      }).catch(() => {});
     } catch (err: any) {
       const data = err?.response?.data;
       if (data && typeof data === "object") {
@@ -408,6 +431,22 @@ export default function AdminStudentsPage() {
     } finally { setIsUpdating(false); }
   };
 
+  const openAttendanceModal = async (student: User) => {
+    setAttendanceStudent(student);
+    setAttendanceData(null);
+    setAttendanceError(null);
+    setIsAttendanceModalOpen(true);
+    setIsLoadingAttendance(true);
+    try {
+      const res = await apiClient.get<any>(API_ENDPOINTS.attendance.adminStudentAttendance(student.id));
+      setAttendanceData(res.data);
+    } catch {
+      setAttendanceError("Failed to load attendance data.");
+    } finally {
+      setIsLoadingAttendance(false);
+    }
+  };
+
   const field = (key: keyof StudentFormData) => ({
     value: formData[key],
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -481,6 +520,9 @@ export default function AdminStudentsPage() {
       key: "actions", header: "", align: "right",
       render: (s) => (
         <div className="flex items-center gap-1 justify-end">
+          <Button variant="ghost" size="sm" onClick={() => openAttendanceModal(s)} title="View Attendance">
+            <BarChart2 className="w-4 h-4 text-primary-500" />
+          </Button>
           <Button variant="ghost" size="sm" onClick={() => handleOpenEdit(s)}>
             <Pencil className="w-4 h-4 text-gray-500" />
           </Button>
@@ -999,9 +1041,35 @@ export default function AdminStudentsPage() {
             <Input label="Email Address" type="email" placeholder="student@university.edu" {...field("email")} error={formErrors.email} />
             <div className="grid grid-cols-2 gap-4">
               <Input label="Student ID"  placeholder="e.g., STU001" {...field("studentId")} error={formErrors.studentId} />
-              <Input label="Department"  placeholder="e.g., Computer Science" {...field("department")} error={formErrors.department} />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Department</label>
+                <select value={formData.department} onChange={(e) => setFormData((p) => ({ ...p, department: e.target.value }))}
+                  className={cn(
+                    "w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-gray-800 dark:text-gray-200",
+                    formErrors.department ? "border-danger-500" : "border-gray-200 dark:border-gray-700"
+                  )}>
+                  <option value="">Select department</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.name}>{d.name}</option>
+                  ))}
+                </select>
+                {formErrors.department && <p className="text-xs text-danger-600 mt-1">{formErrors.department}</p>}
+              </div>
             </div>
-            <Input label="Programme" placeholder="e.g., BSc Computer Science" {...field("program")} error={formErrors.program} />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Programme</label>
+              <select value={formData.program} onChange={(e) => setFormData((p) => ({ ...p, program: e.target.value }))}
+                className={cn(
+                  "w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-gray-800 dark:text-gray-200",
+                  formErrors.program ? "border-danger-500" : "border-gray-200 dark:border-gray-700"
+                )}>
+                <option value="">Select programme</option>
+                {allProgrammes.map((p) => (
+                  <option key={p.id} value={p.code}>{p.code} — {p.name}</option>
+                ))}
+              </select>
+              {formErrors.program && <p className="text-xs text-danger-600 mt-1">{formErrors.program}</p>}
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Study Session</label>
@@ -1127,11 +1195,29 @@ export default function AdminStudentsPage() {
           <div className="grid grid-cols-2 gap-4">
             <Input label="Student ID" placeholder="e.g., STU001" value={editFormData.studentId}
               onChange={(e) => setEditFormData((p) => ({ ...p, studentId: e.target.value }))} />
-            <Input label="Department" placeholder="e.g., Computer Science" value={editFormData.department}
-              onChange={(e) => setEditFormData((p) => ({ ...p, department: e.target.value }))} />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Department</label>
+              <select value={editFormData.department}
+                onChange={(e) => setEditFormData((p) => ({ ...p, department: e.target.value }))}
+                className="w-full border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
+                <option value="">Select department</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.name}>{d.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
-          <Input label="Programme" placeholder="e.g., BSc Computer Science" value={editFormData.program}
-            onChange={(e) => setEditFormData((p) => ({ ...p, program: e.target.value }))} />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Programme</label>
+            <select value={editFormData.program}
+              onChange={(e) => setEditFormData((p) => ({ ...p, program: e.target.value }))}
+              className="w-full border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
+              <option value="">Select programme</option>
+              {allProgrammes.map((p) => (
+                <option key={p.id} value={p.code}>{p.code} — {p.name}</option>
+              ))}
+            </select>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Study Session</label>
@@ -1178,6 +1264,139 @@ export default function AdminStudentsPage() {
         variant="danger"
         isLoading={isDeleting}
       />
+
+      {/* ── Student Attendance Modal ─────────────────────────────────────────── */}
+      <Modal
+        isOpen={isAttendanceModalOpen}
+        onClose={() => { setIsAttendanceModalOpen(false); setAttendanceStudent(null); setAttendanceData(null); }}
+        title={attendanceStudent ? `${attendanceStudent.firstName} ${attendanceStudent.lastName} — Attendance` : "Attendance"}
+        description={attendanceStudent ? `${attendanceStudent.studentId ?? ""} · ${attendanceStudent.studyTime ?? ""}` : ""}
+        size="xl"
+      >
+        {isLoadingAttendance && (
+          <div className="flex items-center justify-center py-16 text-gray-500">
+            <svg className="animate-spin w-6 h-6 mr-3 text-primary-500" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            Loading attendance data…
+          </div>
+        )}
+        {attendanceError && (
+          <div className="flex items-center gap-2 p-4 bg-danger-50 dark:bg-red-950/30 rounded-lg text-danger-700 dark:text-red-300 text-sm">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" /> {attendanceError}
+          </div>
+        )}
+        {attendanceData && !isLoadingAttendance && (
+          <div className="flex flex-col" style={{ maxHeight: "65vh" }}>
+            {/* Summary row — sticky, not scrolled */}
+            <div className="flex-shrink-0 mb-4">
+              <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl text-sm">
+                <div className="flex-1">
+                  <span className="text-gray-500">Cohort:</span>{" "}
+                  <span className="font-medium text-gray-800 dark:text-gray-200">{attendanceData.student.cohort ?? "—"}</span>
+                </div>
+                <div className="flex-1">
+                  <span className="text-gray-500">Overall avg:</span>{" "}
+                  <span className={cn("font-semibold", attendanceData.overallPercentage >= 75 ? "text-success-600" : "text-danger-600")}>
+                    {attendanceData.overallPercentage}%
+                  </span>
+                </div>
+                <div className="flex-1">
+                  <span className="text-gray-500">Courses:</span>{" "}
+                  <span className="font-medium text-gray-800 dark:text-gray-200">{attendanceData.courses.length}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Scrollable course cards */}
+            <div className="overflow-y-auto flex-1 space-y-4 pr-1">
+            {attendanceData.courses.length === 0 && (
+              <p className="text-center text-gray-400 py-10">No attendance records found for this student.</p>
+            )}
+
+            {/* Per-course cards */}
+            {attendanceData.courses.map((course: any) => {
+              const pct: number = course.attendancePercentage;
+              const safe = pct >= course.threshold;
+              const barColor = safe ? "bg-success-500" : "bg-danger-500";
+              const textColor = safe ? "text-success-600 dark:text-success-400" : "text-danger-600 dark:text-danger-400";
+
+              return (
+                <div key={course.courseId} className="border border-gray-100 dark:border-gray-700 rounded-xl overflow-hidden">
+                  {/* Course header */}
+                  <div className="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800/50">
+                    <div>
+                      <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">{course.courseCode}</span>
+                      <span className="mx-2 text-gray-300">·</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">{course.courseName}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={safe ? "success" : "danger"} dot>
+                        {safe ? "On track" : "At risk"}
+                      </Badge>
+                      <span className={cn("text-sm font-bold tabular-nums", textColor)}>{pct}%</span>
+                    </div>
+                  </div>
+
+                  <div className="px-4 py-3 space-y-3">
+                    {/* Attendance bar */}
+                    <div>
+                      <div className="flex justify-between text-xs text-gray-500 mb-1">
+                        <span>{course.attended} attended / {course.totalLectures} total lectures</span>
+                        <span>{course.absent} absent</span>
+                      </div>
+                      <div className="h-2.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div className={cn("h-full rounded-full transition-all", barColor)} style={{ width: `${Math.min(pct, 100)}%` }} />
+                      </div>
+                      {/* Threshold marker */}
+                      <div className="relative h-1 mt-0.5">
+                        <div className="absolute h-2 w-0.5 bg-gray-400 dark:bg-gray-500 rounded top-0" style={{ left: `${course.threshold}%` }} />
+                        <span className="absolute text-[10px] text-gray-400 -translate-x-1/2 top-2" style={{ left: `${course.threshold}%` }}>{course.threshold}%</span>
+                      </div>
+                    </div>
+
+                    {/* Session trend — mini bar chart */}
+                    {course.trend.length > 0 && (
+                      <div className="mt-5">
+                        <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
+                          <TrendingUp className="w-3.5 h-3.5" /> Cumulative attendance trend (session by session)
+                        </p>
+                        <div className="flex items-end gap-0.5 h-14">
+                          {course.trend.map((t: any, idx: number) => {
+                            const present = t.status === "present" || t.status === "late";
+                            return (
+                              <div key={`${course.courseId}-${idx}`} className="flex-1 flex flex-col items-center gap-0.5 group relative">
+                                {/* bar = cumulative % */}
+                                <div
+                                  className={cn("w-full rounded-sm transition-all", present ? "bg-primary-400" : "bg-gray-200 dark:bg-gray-600")}
+                                  style={{ height: `${Math.max((t.cumulativePct / 100) * 48, 2)}px` }}
+                                />
+                                {/* tooltip */}
+                                <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:flex flex-col items-center z-10 pointer-events-none">
+                                  <div className="bg-gray-900 text-white text-[10px] rounded px-1.5 py-1 whitespace-nowrap shadow-lg">
+                                    {t.date}<br/>{present ? "✓ Present" : "✗ Absent"}<br/>{t.cumulativePct}%
+                                  </div>
+                                  <div className="w-1.5 h-1.5 bg-gray-900 rotate-45 -mt-0.5" />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="flex justify-between text-[10px] text-gray-400 mt-1">
+                          <span>Session 1</span>
+                          <span>Session {course.trend.length}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            </div>{/* end scrollable */}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

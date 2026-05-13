@@ -53,10 +53,19 @@ class CourseViewSet(viewsets.ModelViewSet):
         if faculty:
             queryset = queryset.filter(faculty=faculty)
         if cohort:
-            queryset = queryset.filter(
-                enrollments__student__cohort=cohort,
-                enrollments__is_active=True
-            )
+            try:
+                cohort_obj = Cohort.objects.get(pk=cohort)
+                queryset = queryset.filter(
+                    enrollments__student__cohort=cohort,
+                    enrollments__is_active=True
+                )
+                # Auto-restrict to cohort's current year unless caller overrides
+                if not year_level:
+                    current_yr = cohort_obj.current_year_of_study
+                    if current_yr:
+                        queryset = queryset.filter(year_level=current_yr)
+            except Cohort.DoesNotExist:
+                pass
         if year_level:
             queryset = queryset.filter(year_level=year_level)
         if semester_number:

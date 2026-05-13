@@ -2,7 +2,7 @@
 
 /**
  * Lecturer Attendance Page
- * Shows attendance records for each of the lecturer's courses
+ * Shows attendance sessions for each of the lecturer's courses
  */
 
 import React, { useState, useEffect } from "react";
@@ -12,15 +12,13 @@ import {
   CardHeader,
   PageLoading,
   ErrorState,
-  Button,
   Badge,
   Table,
   TableColumn,
-  Avatar,
   EmptyState,
 } from "@/components/ui";
 import { apiClient, API_ENDPOINTS } from "@/lib/api";
-import { Course, AttendanceRecord } from "@/types";
+import { Course } from "@/types";
 import {
   Users,
   BookOpen,
@@ -29,25 +27,34 @@ import {
   Search,
   ChevronDown,
   ChevronUp,
+  Calendar,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
-interface CourseWithAttendance extends Course {
-  attendanceRecords?: AttendanceRecord[];
-  attendanceSummary?: {
-    totalSessions: number;
-    averageAttendance: number;
-  };
+interface SessionRow {
+  id: string;
+  date: string;
+  startTime: string;
+  endTime?: string;
+  room?: string;
+  totalEnrolled: number;
+  presentCount: number;
+  attendanceRate: number;
+  isActive: boolean;
+}
+
+interface CourseWithSessions extends Course {
+  sessions?: SessionRow[];
 }
 
 export default function LecturerAttendancePage() {
   const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [courses, setCourses] = useState<CourseWithAttendance[]>([]);
-  const [expandedCourse, setExpandedCourse] = useState<number | null>(null);
+  const [courses, setCourses] = useState<CourseWithSessions[]>([]);
+  const [expandedCourse, setExpandedCourse] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [loadingRecords, setLoadingRecords] = useState<number | null>(null);
+  const [loadingSessions, setLoadingSessions] = useState<string | null>(null);
 
   useEffect(() => {
     fetchCourses();
@@ -55,14 +62,11 @@ export default function LecturerAttendancePage() {
 
   const fetchCourses = async () => {
     if (!user) return;
-
     try {
       setIsLoading(true);
       setError(null);
-
-      // Fetch lecturer's courses
       const response = await apiClient.get<Course[] | { results: Course[] }>(
-        API_ENDPOINTS.courses.myCoordinated
+        "/courses/my/lecturer/"
       );
       const data = response.data;
       const courseList = Array.isArray(data) ? data : (data as any).results ?? [];
@@ -75,78 +79,105 @@ export default function LecturerAttendancePage() {
     }
   };
 
-  const fetchAttendanceForCourse = async (courseId: number) => {
-    setLoadingRecords(courseId);
+  const fetchSessionsForCourse = async (courseId: string) => {
+    setLoadingSessions(courseId);
     try {
-      const response = await apiClient.get<AttendanceRecord[] | { results: AttendanceRecord[] }>(
-        API_ENDPOINTS.courses.attendance(courseId)
+      const response = await apiClient.get<any>(
+        `${API_ENDPOINTS.attendance.sessions}?course=${courseId}&ordering=-date,-start_time&page_size=50`
       );
-      const data = response.data;
-      const records = Array.isArray(data) ? data : (data as any).results ?? [];
+      const raw: any[] = Array.isArray(response.data)
+        ? response.data
+        : (response.data as any).results ?? [];
+
+      const sessions: SessionRow[] = raw.map((s: any) => ({
+        id: s.id,
+        date: s.date,
+        startTime: s.startTime ?? s.start_time ?? "",
+        endTime: s.endTime ?? s.end_time,
+        room: s.room,
+        totalEnrolled: s.totalEnrolled ?? s.total_enrolled ?? 0,
+        presentCount: s.presentCount ?? s.present_count ?? 0,
+        attendanceRate: s.attendanceRate ?? s.attendance_rate ?? 0,
+        isActive: s.isActive ?? s.is_active ?? false,
+      }));
 
       setCourses((prev) =>
-        prev.map((course) =>
-          course.id === courseId ? { ...course, attendanceRecords: records } : course
-        )
+        prev.map((c) => (c.id === courseId ? { ...c, sessions } : c))
       );
     } catch (err) {
-      console.error("Failed to fetch attendance records:", err);
+      console.error("Failed to fetch sessions:", err);
     } finally {
-      setLoadingRecords(null);
+      setLoadingSessions(null);
     }
   };
 
-  const handleToggleCourse = (courseId: number) => {
+  const handleToggleCourse = (courseId: string) => {
     if (expandedCourse === courseId) {
       setExpandedCourse(null);
     } else {
       setExpandedCourse(courseId);
       const course = courses.find((c) => c.id === courseId);
-      if (course && !course.attendanceRecords) {
-        fetchAttendanceForCourse(courseId);
+      if (course && !course.sessions) {
+        fetchSessionsForCourse(courseId);
       }
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "present":
-        return <Badge variant="success" dot>Present</Badge>;
-      case "absent":
-        return <Badge variant="danger" dot>Absent</Badge>;
-      default:
-        return <Badge variant="default">{status}</Badge>;
-    }
-  };
-
-  const recordColumns: TableColumn<AttendanceRecord>[] = [
+  const sessionColumns: TableColumn<SessionRow>[] = [
     {
-      key: "student",
-      header: "Student",
-      render: (record) => (
-        <div className="flex items-center gap-3">
-          <Avatar
-            firstName={record.student?.firstName || ""}
-            lastName={record.student?.lastName || ""}
-            size="sm"
-          />
-          <div>
-            <p className="font-medium text-gray-900 dark:text-gray-100">
-              {record.student?.firstName} {record.student?.lastName}
-            </p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {record.student?.studentId || "N/A"}
-            </p>
-          </div>
+      key: "date",
+      header: "Date",
+      render: (s) => (
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-gray-400" />
+          <span className="text-gray-900 dark:text-gray-100">{formatDate(s.date)}</span>
         </div>
       ),
     },
     {
-      key: "date",
-      header: "Date",
-      render: (record) => (
-        <span className="text-gray-600 dark:text-gray-400">
-          {record.checkInTime ? formatDate(record.checkInTime) : "-"}
+      key: "time",
+      header: "Time",
+      render: (s) => (
+        <span className="text-sm text-gray-600 dark:text-gray-400">
+          {s.startTime?.slice(0, 5)}{s.endTime ? ` – ${s.endTime.slice(0, 5)}` : ""}
+        </span>
+      ),
+    },
+    {
+      key: "room",
+      header: "Room",
+      render: (s) => (
+        <span className="text-sm text-gray-600 dark:text-gray-400">{s.room ?? "—"}</span>
+      ),
+    },
+    {
+      key: "attendance",
+      header: "Attendance",
+      align: "center",
+      render: (s) => (
+        <div className="flex items-center justify-center gap-3">
+          <span className="flex items-center gap-1 text-success-600 font-medium">
+            <CheckCircle className="w-4 h-4" />
+            {s.presentCount}
+          </span>
+          <span className="flex items-center gap-1 text-danger-600 font-medium">
+            <XCircle className="w-4 h-4" />
+            {s.totalEnrolled - s.presentCount}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: "rate",
+      header: "Rate",
+      align: "center",
+      render: (s) => (
+        <span
+          className={`font-semibold ${
+            s.attendanceRate >= 75 ? "text-success-600" : "text-danger-600"
+          }`}
+        >
+          {s.attendanceRate.toFixed(1)}%
         </span>
       ),
     },
@@ -154,16 +185,10 @@ export default function LecturerAttendancePage() {
       key: "status",
       header: "Status",
       align: "center",
-      render: (record) => getStatusBadge(record.status),
-    },
-    {
-      key: "checkInTime",
-      header: "Check-in Time",
-      align: "center",
-      render: (record) => (
-        <span className="text-gray-600 dark:text-gray-400">
-          {record.checkInTime || "-"}
-        </span>
+      render: (s) => (
+        <Badge variant={s.isActive ? "success" : "default"} dot>
+          {s.isActive ? "Active" : "Completed"}
+        </Badge>
       ),
     },
   ];
@@ -187,7 +212,7 @@ export default function LecturerAttendancePage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Attendance</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
-            View student attendance records for your courses
+            View attendance sessions for your courses
           </p>
         </div>
         <div className="relative">
@@ -213,93 +238,108 @@ export default function LecturerAttendancePage() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {filteredCourses.map((course) => (
-            <Card key={course.id} className="overflow-hidden">
-              {/* Course Header - Clickable */}
-              <button
-                onClick={() => handleToggleCourse(course.id as number)}
-                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-primary-100 dark:bg-primary-900/40 rounded-xl">
-                    <BookOpen className="w-6 h-6 text-primary-600 dark:text-primary-400" />
-                  </div>
-                  <div className="text-left">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                        {course.code}
-                      </h3>
-                      <Badge variant="default">{course.enrolledStudents || 0} students</Badge>
+          {filteredCourses.map((course) => {
+            const avgRate =
+              course.sessions && course.sessions.length > 0
+                ? course.sessions.reduce((sum, s) => sum + s.attendanceRate, 0) /
+                  course.sessions.length
+                : (course as any).averageAttendance ?? 0;
+
+            return (
+              <Card key={course.id} className="overflow-hidden">
+                {/* Course Header - Clickable */}
+                <button
+                  onClick={() => handleToggleCourse(course.id as string)}
+                  className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-primary-100 dark:bg-primary-900/40 rounded-xl">
+                      <BookOpen className="w-6 h-6 text-primary-600 dark:text-primary-400" />
                     </div>
-                    <p className="text-gray-500 dark:text-gray-400">{course.name}</p>
+                    <div className="text-left">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                          {course.code}
+                        </h3>
+                        <Badge variant="default">
+                          {(course as any).totalStudents ?? course.enrolledStudents ?? 0} students
+                        </Badge>
+                      </div>
+                      <p className="text-gray-500 dark:text-gray-400">{course.name}</p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  {course.attendanceSummary && (
+                  <div className="flex items-center gap-4">
                     <div className="text-right mr-4">
                       <p className="text-sm text-gray-500">Avg. Attendance</p>
-                      <p className={`text-lg font-bold ${
-                        (course.attendanceSummary.averageAttendance || 0) >= 75 
-                          ? "text-success-600" 
-                          : "text-danger-600"
-                      }`}>
-                        {course.attendanceSummary.averageAttendance?.toFixed(1) || 0}%
+                      <p
+                        className={`text-lg font-bold ${
+                          avgRate >= 75 ? "text-success-600" : "text-danger-600"
+                        }`}
+                      >
+                        {avgRate.toFixed(1)}%
                       </p>
                     </div>
-                  )}
-                  {expandedCourse === course.id ? (
-                    <ChevronUp className="w-5 h-5 text-gray-400" />
-                  ) : (
-                    <ChevronDown className="w-5 h-5 text-gray-400" />
-                  )}
-                </div>
-              </button>
+                    {expandedCourse === course.id ? (
+                      <ChevronUp className="w-5 h-5 text-gray-400" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5 text-gray-400" />
+                    )}
+                  </div>
+                </button>
 
-              {/* Expanded Attendance Records */}
-              {expandedCourse === course.id && (
-                <div className="border-t border-gray-200 dark:border-gray-700">
-                  {loadingRecords === course.id ? (
-                    <div className="p-8 text-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-                      <p className="mt-2 text-gray-500">Loading attendance records...</p>
-                    </div>
-                  ) : course.attendanceRecords && course.attendanceRecords.length > 0 ? (
-                    <div className="p-4">
-                      {/* Summary Stats */}
-                      <div className="grid grid-cols-2 gap-4 mb-4">
-                        <div className="text-center p-3 bg-success-50 dark:bg-green-950/30 rounded-lg">
-                          <CheckCircle className="w-5 h-5 text-success-600 mx-auto mb-1" />
-                          <p className="text-2xl font-bold text-success-600">
-                            {course.attendanceRecords.filter((r) => r.status === "present").length}
-                          </p>
-                          <p className="text-xs text-gray-500">Present</p>
-                        </div>
-                        <div className="text-center p-3 bg-danger-50 dark:bg-red-950/30 rounded-lg">
-                          <XCircle className="w-5 h-5 text-danger-600 mx-auto mb-1" />
-                          <p className="text-2xl font-bold text-danger-600">
-                            {course.attendanceRecords.filter((r) => r.status === "absent").length}
-                          </p>
-                          <p className="text-xs text-gray-500">Absent</p>
-                        </div>
+                {/* Expanded Sessions */}
+                {expandedCourse === course.id && (
+                  <div className="border-t border-gray-200 dark:border-gray-700">
+                    {loadingSessions === course.id ? (
+                      <div className="p-8 text-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
+                        <p className="mt-2 text-gray-500">Loading sessions...</p>
                       </div>
-
-                      {/* Records Table */}
-                      <Table
-                        columns={recordColumns}
-                        data={course.attendanceRecords}
-                        keyExtractor={(record) => record.id}
-                      />
-                    </div>
-                  ) : (
-                    <div className="p-8 text-center">
-                      <Users className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                      <p className="text-gray-500">No attendance records yet for this course.</p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </Card>
-          ))}
+                    ) : course.sessions && course.sessions.length > 0 ? (
+                      <div className="p-4">
+                        {/* Summary */}
+                        <div className="grid grid-cols-3 gap-4 mb-4">
+                          <div className="text-center p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                            <p className="text-2xl font-bold text-gray-700 dark:text-gray-200">
+                              {course.sessions.length}
+                            </p>
+                            <p className="text-xs text-gray-500">Sessions</p>
+                          </div>
+                          <div className="text-center p-3 bg-success-50 dark:bg-green-950/30 rounded-lg">
+                            <CheckCircle className="w-5 h-5 text-success-600 mx-auto mb-1" />
+                            <p className="text-2xl font-bold text-success-600">
+                              {course.sessions.reduce((s, r) => s + r.presentCount, 0)}
+                            </p>
+                            <p className="text-xs text-gray-500">Total Present</p>
+                          </div>
+                          <div className="text-center p-3 bg-danger-50 dark:bg-red-950/30 rounded-lg">
+                            <XCircle className="w-5 h-5 text-danger-600 mx-auto mb-1" />
+                            <p className="text-2xl font-bold text-danger-600">
+                              {course.sessions.reduce(
+                                (s, r) => s + (r.totalEnrolled - r.presentCount),
+                                0
+                              )}
+                            </p>
+                            <p className="text-xs text-gray-500">Total Absent</p>
+                          </div>
+                        </div>
+                        <Table
+                          columns={sessionColumns}
+                          data={course.sessions}
+                          keyExtractor={(s) => s.id}
+                        />
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center">
+                        <Users className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                        <p className="text-gray-500">No attendance sessions yet for this course.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>

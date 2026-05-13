@@ -9,6 +9,7 @@ from .views import (
     LecturerCourseAttendanceView, ActiveSessionsView, TodaySessionsView,
     FingerprintAttendanceView, EnrolledTemplatesView, MarkPresentView,
     AdminCourseAttendanceSummaryView, CourseAttendanceRegisterView,
+    AdminStudentAttendanceView,
 )
 
 router = DefaultRouter()
@@ -27,5 +28,6 @@ urlpatterns = [
     path('sessions/<uuid:session_id>/enrolled-templates/', EnrolledTemplatesView.as_view(), name='enrolled_templates'),
     path('sessions/<uuid:session_id>/mark-present/', MarkPresentView.as_view(), name='mark_present'),
     path('admin/course/<uuid:course_id>/', AdminCourseAttendanceSummaryView.as_view(), name='admin_course_attendance'),
+    path('admin/student/<uuid:student_id>/', AdminStudentAttendanceView.as_view(), name='admin_student_attendance'),
     path('course/<uuid:course_id>/register/', CourseAttendanceRegisterView.as_view(), name='course-register'),
 ]
